@@ -82,7 +82,8 @@ class AnkiWrapper:
         return result
 
     def change_deck(self, cards: list[int], deck: str) -> None:
-        pass
+        deck_id = self.col.decks.id(deck)
+        self.col.set_deck([CardId(c) for c in cards], deck_id)
 
     def get_deck_config(self, deck: str) -> dict:
         config_id = self.col.decks.config_id_for_deck(deck)
