@@ -1,5 +1,6 @@
 from typing import Any, Optional
 from anki_wrapper import AnkiWrapper
+import asyncio
 
 
 API_VERSION = 6
@@ -10,15 +11,15 @@ async def handle_version(wrapper: AnkiWrapper, params: dict) -> int:
 
 
 async def handle_sync(wrapper: AnkiWrapper, params: dict) -> str:
-    return wrapper.sync_to_ankiweb()
+    return await asyncio.to_thread(wrapper.sync_to_ankiweb)
 
 
 async def handle_sync_status(wrapper: AnkiWrapper, params: dict) -> dict:
-    return wrapper.sync_status()
+    return await asyncio.to_thread(wrapper.sync_status)
 
 
 async def handle_sync_media(wrapper: AnkiWrapper, params: dict) -> str:
-    return wrapper.sync_media_only()
+    return await asyncio.to_thread(wrapper.sync_media_only)
 
 
 async def handle_deck_names(wrapper: AnkiWrapper, params: dict) -> list[str]:
