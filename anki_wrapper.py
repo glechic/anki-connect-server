@@ -68,6 +68,10 @@ class AnkiWrapper:
         for deck in decks:
             deck_id = self.col.decks.id_for_name(deck)
             if deck_id:
+                if cards_too:
+                    card_ids = self.col.find_cards(f"deck:{deck}")
+                    if card_ids:
+                        self.col.remove_cards(card_ids)
                 self.col.decks.remove([deck_id])
 
     def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
