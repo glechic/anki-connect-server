@@ -230,7 +230,7 @@ class AnkiWrapper:
             return
         for field_name, value in note.get("fields", {}).items():
             note_obj[field_name] = value
-        note_obj.flush()
+        self.col.update_note(note_obj)
 
     def add_tags(self, notes: list[int], tags: str) -> None:
         self.col.tags.add_tags((NoteId(n) for n in notes), tags.split())
