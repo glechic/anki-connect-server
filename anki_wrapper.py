@@ -255,7 +255,7 @@ class AnkiWrapper:
         return list(self.col.tags.all())
 
     def find_notes(self, query: str) -> list[int]:
-        return self.col.find_notes(query)
+        return list(self.col.find_notes(query))
 
     def notes_info(self, notes: list[int]) -> list[dict]:
         result = []
@@ -269,8 +269,8 @@ class AnkiWrapper:
                 "modelName": model["name"] if model else "",
                 "tags": list(note.tags),
                 "fields": {
-                    name: {"value": note.get(name, ""), "order": i}
-                    for i, name in enumerate(note)
+                    name: {"value": value, "order": i}
+                    for i, (name, value) in enumerate(note.items())
                 },
             })
         return result
@@ -279,10 +279,15 @@ class AnkiWrapper:
         self.col.remove_notes(NoteId(n) for n in notes)
 
     def find_cards(self, query: str) -> list[int]:
-        return self.col.find_cards(query)
+        return list(self.col.find_cards(query))
 
     def cards_to_notes(self, cards: list[int]) -> list[int]:
-        return list(set(self.col.cards_to_notes(CardId(c) for c in cards)))
+        note_ids = []
+        for c in cards:
+            card = self.col.get_card(CardId(c))
+            if card:
+                note_ids.append(card.nid)
+        return list(set(note_ids))
 
     def cards_info(self, cards: list[int]) -> list[dict]:
         result = []
@@ -298,8 +303,8 @@ class AnkiWrapper:
                 "deckName": self.col.decks.name(card.did),
                 "modelName": model["name"] if model else "",
                 "fields": {
-                    name: {"value": note.get(name, ""), "order": i}
-                    for i, name in enumerate(note)
+                    name: {"value": value, "order": i}
+                    for i, (name, value) in enumerate(note.items())
                 },
                 "interval": card.ivl,
                 "ease": card.factor,
@@ -309,12 +314,14 @@ class AnkiWrapper:
         return result
 
     def suspend(self, cards: list[int]) -> bool:
-        suspended = self.col.sched.suspend_cards(CardId(c) for c in cards)
-        return suspended.count > 0
+        card_ids = [CardId(c) for c in cards]
+        suspended = self.col.sched.suspend_cards(card_ids)
+        return suspended.count > 0 if hasattr(suspended, 'count') else True
 
     def unsuspend(self, cards: list[int]) -> bool:
-        unsuspended = self.col.sched.unsuspend_cards(CardId(c) for c in cards)
-        return unsuspended.count > 0
+        card_ids = [CardId(c) for c in cards]
+        self.col.sched.unsuspend_cards(card_ids)
+        return True
 
     def are_suspended(self, cards: list[int]) -> list[bool]:
         return [self.col.get_card(CardId(c)).queue == -1 for c in cards]
