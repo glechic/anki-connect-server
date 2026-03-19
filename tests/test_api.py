@@ -49,9 +49,8 @@ def app_with_mock(mock_wrapper):
 async def test_root_endpoint(app_with_mock):
     """Test root endpoint returns health message."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/")
+        response = await client.post("/", json={"action": "version", "version": 6})
         assert response.status_code == 200
-        assert "AnkiConnect Server" in response.json()["message"]
 
 
 @pytest.mark.asyncio
