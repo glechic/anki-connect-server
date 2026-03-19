@@ -32,8 +32,10 @@ class AnkiWrapper:
             password=config.ANKIWEB_PASS,
             endpoint=endpoint,
         )
+        
         result = self.col.sync_collection(auth, sync_media=False)
-        return f"sync completed: {result}"
+        
+        return f"sync completed: host={result.host_number}, required={result.required}"
 
     def deck_names(self) -> list[str]:
         decks = self.col.decks.all_names_and_ids()
