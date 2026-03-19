@@ -307,7 +307,16 @@ class AnkiWrapper:
         return [self.col.get_card(CardId(c)).queue == -1 for c in cards]
 
     def are_due(self, cards: list[int]) -> list[bool]:
-        return [self.col.get_card(CardId(c)).due <= 0 for c in cards]
+        result = []
+        for c in cards:
+            card = self.col.get_card(CardId(c))
+            if card.queue in (1, 3):
+                result.append(True)
+            elif card.queue == 2:
+                result.append(card.due <= 0)
+            else:
+                result.append(False)
+        return result
 
     def get_intervals(self, cards: list[int], complete: bool = False) -> list[Any]:
         result = []
