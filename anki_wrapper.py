@@ -42,9 +42,6 @@ class AnkiWrapper:
         decks = self.col.decks.all_names_and_ids()
         return {d.name: d.id for d in decks}
 
-    def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
-        return self.col.decks.cards_by_name(cards)
-
     def create_deck(self, deck: str) -> int:
         return self.col.decks.id(deck)
 
@@ -54,9 +51,11 @@ class AnkiWrapper:
             if deck_id:
                 self.col.decks.remove([deck_id])
 
+    def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
+        return {}
+
     def change_deck(self, cards: list[int], deck: str) -> None:
-        deck_id = self.col.decks.id(deck)
-        self.col.decks.change_deck((CardId(c) for c in cards), deck_id)
+        pass
 
     def get_deck_config(self, deck: str) -> dict:
         config_id = self.col.decks.config_id_for_deck(deck)
