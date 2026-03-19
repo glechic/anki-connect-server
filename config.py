@@ -1,4 +1,5 @@
 from typing import Optional
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,9 +21,12 @@ class Config(BaseSettings):
 
     ANKIWEB_URL: Optional[str] = None
 
-    def validate(self) -> None:
-        if not self.COLLECTION_PATH:
-            raise ValueError("ANKI_COLLECTION_PATH environment variable is required")
+    @model_validator(mode="before")
+    @classmethod
+    def check_collection_path(cls, values):
+        if not values.get("COLLECTION_PATH"):
+            raise ValueError("ANKICONNECT_COLLECTION_PATH environment variable is required")
+        return values
 
 
 config = Config()

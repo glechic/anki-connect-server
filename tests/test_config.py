@@ -46,16 +46,15 @@ def test_config_optional_ankiweb():
 def test_validate_raises_without_collection_path():
     """Test that validation raises error without collection path."""
     from config import Config
-    cfg = Config()
-    with pytest.raises(ValueError, match="ANKI_COLLECTION_PATH"):
-        cfg.validate()
+    with pytest.raises(Exception, match="ANKICONNECT_COLLECTION_PATH"):
+        Config(COLLECTION_PATH="")
 
 
 def test_validate_passes_with_collection_path():
     """Test that validation passes with collection path."""
     from config import Config
     cfg = Config(COLLECTION_PATH="/test/path.anki21")
-    cfg.validate()
+    assert cfg.COLLECTION_PATH == "/test/path.anki21"
 
 
 def test_config_loads_from_env(monkeypatch):
