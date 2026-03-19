@@ -330,7 +330,12 @@ class AnkiWrapper:
                 result.append(None)
                 continue
             if complete:
-                result.append(card.ivl)
+                result.append({
+                    "interval": card.ivl,
+                    "last_interval": card.lapse,
+                    "is_learning": card.queue in (1, 3),
+                    "is_mature": card.ivl >= 21,
+                })
             else:
                 result.append(card.ivl)
         return result
