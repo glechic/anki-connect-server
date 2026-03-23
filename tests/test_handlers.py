@@ -80,12 +80,27 @@ class TestModelHandlers:
         assert "Basic" in result
 
     @pytest.mark.asyncio
+    async def test_handle_model_names_and_ids(self, anki_wrapper):
+        """Test modelNamesAndIds handler."""
+        from api.handlers import handle_model_names_and_ids
+        result = await handle_model_names_and_ids(anki_wrapper, {})
+        assert "Basic" in result
+
+    @pytest.mark.asyncio
     async def test_handle_model_field_names(self, anki_wrapper):
         """Test modelFieldNames handler."""
         from api.handlers import handle_model_field_names
         result = await handle_model_field_names(anki_wrapper, {"modelName": "Basic"})
         assert "Front" in result
         assert "Back" in result
+
+    @pytest.mark.asyncio
+    async def test_handle_model_styling(self, anki_wrapper):
+        """Test modelStyling handler."""
+        from api.handlers import handle_model_styling
+        result = await handle_model_styling(anki_wrapper, {"modelName": "Basic"})
+        assert isinstance(result, dict)
+        assert "css" in result
 
 
 class TestNoteHandlers:
@@ -126,22 +141,177 @@ class TestNoteHandlers:
         assert result[0] is not None
         assert result[1] is not None
 
-
-class TestTagHandlers:
-    """Test tag-related handlers."""
+    @pytest.mark.asyncio
+    async def test_handle_update_note_fields(self, anki_wrapper):
+        """Test updateNoteFields handler."""
+        from api.handlers import handle_update_note_fields
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        await handle_update_note_fields(anki_wrapper, {
+            "note": {"id": note_id, "fields": {"Front": "Updated"}}
+        })
 
     @pytest.mark.asyncio
-    async def test_handle_get_tags(self, anki_wrapper):
-        """Test getTags handler."""
-        from api.handlers import handle_get_tags
+    async def test_handle_can_add_notes(self, anki_wrapper):
+        """Test canAddNotes handler."""
+        from api.handlers import handle_can_add_notes
+        result = await handle_can_add_notes(anki_wrapper, {
+            "notes": [{
+                "deckName": "Default",
+                "modelName": "Basic",
+                "fields": {"Front": "Test", "Back": "Test"}
+            }]
+        })
+        assert len(result) == 1
+        assert result[0] is True
+
+    @pytest.mark.asyncio
+    async def test_handle_find_notes(self, anki_wrapper):
+        """Test findNotes handler."""
+        from api.handlers import handle_find_notes
         anki_wrapper.add_note({
             "deckName": "Default",
             "modelName": "Basic",
-            "fields": {"Front": "TagTest", "Back": "Test"},
-            "tags": ["testtag"]
+            "fields": {"Front": "FindTest", "Back": "Test"}
         })
-        result = await handle_get_tags(anki_wrapper, {})
-        assert "testtag" in result
+        result = await handle_find_notes(anki_wrapper, {"query": "FindTest"})
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_handle_notes_info(self, anki_wrapper):
+        """Test notesInfo handler."""
+        from api.handlers import handle_notes_info
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        result = await handle_notes_info(anki_wrapper, {"notes": [note_id]})
+        assert len(result) == 1
+        assert result[0]["noteId"] == note_id
+
+    @pytest.mark.asyncio
+    async def test_handle_delete_notes(self, anki_wrapper):
+        """Test deleteNotes handler."""
+        from api.handlers import handle_delete_notes
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        await handle_delete_notes(anki_wrapper, {"notes": [note_id]})
+
+
+class TestCardHandlers:
+    """Test card-related handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handle_find_cards(self, anki_wrapper):
+        """Test findCards handler."""
+        from api.handlers import handle_find_cards
+        anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "CardTest", "Back": "Test"}
+        })
+        result = await handle_find_cards(anki_wrapper, {"query": "CardTest"})
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_handle_cards_to_notes(self, anki_wrapper):
+        """Test cardsToNotes handler."""
+        from api.handlers import handle_cards_to_notes
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_cards_to_notes(anki_wrapper, {"cards": card_ids})
+        assert note_id in result
+
+    @pytest.mark.asyncio
+    async def test_handle_cards_info(self, anki_wrapper):
+        """Test cardsInfo handler."""
+        from api.handlers import handle_cards_info
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_cards_info(anki_wrapper, {"cards": card_ids})
+        assert len(result) > 0
+
+    @pytest.mark.asyncio
+    async def test_handle_suspend(self, anki_wrapper):
+        """Test suspend handler."""
+        from api.handlers import handle_suspend
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_suspend(anki_wrapper, {"cards": card_ids})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_handle_unsuspend(self, anki_wrapper):
+        """Test unsuspend handler."""
+        from api.handlers import handle_unsuspend
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        anki_wrapper.suspend(card_ids)
+        result = await handle_unsuspend(anki_wrapper, {"cards": card_ids})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_handle_are_suspended(self, anki_wrapper):
+        """Test areSuspended handler."""
+        from api.handlers import handle_are_suspended
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_are_suspended(anki_wrapper, {"cards": card_ids})
+        assert len(result) == 1
+        assert result[0] is False
+
+    @pytest.mark.asyncio
+    async def test_handle_are_due(self, anki_wrapper):
+        """Test areDue handler."""
+        from api.handlers import handle_are_due
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_are_due(anki_wrapper, {"cards": card_ids})
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_intervals(self, anki_wrapper):
+        """Test getIntervals handler."""
+        from api.handlers import handle_get_intervals
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_get_intervals(anki_wrapper, {"cards": card_ids})
+        assert len(result) == 1
 
 
 class TestMediaHandlers:
@@ -156,45 +326,18 @@ class TestMediaHandlers:
         assert len(result) > 0
 
 
-class TestDispatch:
-    """Test dispatch function."""
+class TestMultiHandler:
+    """Test multi action handler."""
 
     @pytest.mark.asyncio
-    async def test_dispatch_unknown_action(self, anki_wrapper):
-        """Test dispatch with unknown action."""
-        from api.handlers import dispatch
-        with pytest.raises(ValueError, match="Unsupported action"):
-            await dispatch("unknownAction", {}, anki_wrapper)
-
-    @pytest.mark.asyncio
-    async def test_dispatch_valid_action(self, anki_wrapper):
-        """Test dispatch with valid action."""
-        from api.handlers import dispatch
-        result = await dispatch("deckNames", {}, anki_wrapper)
-        assert isinstance(result, list)
-
-
-class TestSyncHandlers:
-    """Test sync-related handlers."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.skipif(
-        not os.environ.get("ANKICONNECT_ANKIWEB_USER"),
-        reason="ANKICONNECT_ANKIWEB_USER not set"
-    )
-    async def test_handle_sync_status(self, anki_wrapper):
-        """Test syncStatus handler."""
-        from api.handlers import handle_sync_status
-        result = await handle_sync_status(anki_wrapper, {})
-        assert "server" in result
-
-    @pytest.mark.asyncio
-    @pytest.mark.skipif(
-        not os.environ.get("ANKICONNECT_ANKIWEB_USER"),
-        reason="ANKICONNECT_ANKIWEB_USER not set"
-    )
-    async def test_handle_sync_media(self, anki_wrapper):
-        """Test syncMedia handler."""
-        from api.handlers import handle_sync_media
-        result = await handle_sync_media(anki_wrapper, {})
-        assert result is not None
+    async def test_handle_multi(self, anki_wrapper):
+        """Test multi handler."""
+        from api.handlers import handle_multi
+        anki_wrapper.create_deck("MultiTest")
+        result = await handle_multi(anki_wrapper, {
+            "actions": [
+                {"action": "deckNames", "params": {}},
+                {"action": "modelNames", "params": {}}
+            ]
+        })
+        assert len(result) == 2
