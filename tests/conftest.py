@@ -5,20 +5,18 @@ import tempfile
 
 import pytest
 
-os.environ["ANKICONNECT_COLLECTION_PATH"] = "/tmp/test_collection.anki21"
-
 
 @pytest.fixture
 def anki_wrapper():
     """Create a real AnkiWrapper with temporary collection."""
-    with tempfile.NamedTemporaryFile(suffix=".anki21", delete=False) as f:
-        collection_path = f.name
+    with tempfile.TemporaryDirectory() as tmpdir:
+        collection_path = os.path.join(tmpdir, "test.anki21")
+        media_path = collection_path + "-media"
+        os.makedirs(media_path, exist_ok=True)
 
-    from anki_wrapper import AnkiWrapper
-    wrapper = AnkiWrapper(collection_path)
+        from anki_wrapper import AnkiWrapper
+        wrapper = AnkiWrapper(collection_path)
 
-    yield wrapper
+        yield wrapper
 
-    wrapper.close()
-    if os.path.exists(collection_path):
-        os.remove(collection_path)
+        wrapper.close()
