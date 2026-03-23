@@ -311,6 +311,64 @@ class TestAnkiWrapperIntegration:
         assert len(result) == 1
         assert result[0] is True
 
+    def test_model_fields_on_templates(self, anki_wrapper):
+        """Test model_fields_on_templates."""
+        result = anki_wrapper.model_fields_on_templates("Basic")
+        assert isinstance(result, dict)
+        assert "Card 1" in result
+        assert len(result["Card 1"]) == 2
+
+    def test_model_fields_on_templates_nonexistent(self, anki_wrapper):
+        """Test model_fields_on_templates with non-existent model."""
+        result = anki_wrapper.model_fields_on_templates("NonExistent")
+        assert result == {}
+
+    def test_model_styling_nonexistent(self, anki_wrapper):
+        """Test model_styling with non-existent model."""
+        result = anki_wrapper.model_styling("NonExistent")
+        assert result == {}
+
+    def test_model_field_names_nonexistent(self, anki_wrapper):
+        """Test model_field_names with non-existent model."""
+        result = anki_wrapper.model_field_names("NonExistent")
+        assert result == []
+
+    def test_are_due_nonexistent_card(self, anki_wrapper):
+        """Test are_due with non-existent card."""
+        result = anki_wrapper.are_due([999999])
+        assert len(result) == 1
+        assert result[0] is False
+
+    def test_notes_info_nonexistent_note(self, anki_wrapper):
+        """Test notes_info with non-existent note."""
+        result = anki_wrapper.notes_info([999999])
+        assert len(result) == 0
+
+    def test_cards_info_nonexistent_card(self, anki_wrapper):
+        """Test cards_info with non-existent card."""
+        result = anki_wrapper.cards_info([999999])
+        assert len(result) == 0
+
+    def test_get_intervals_complete_true(self, anki_wrapper):
+        """Test get_intervals with complete=True."""
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "Test", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = anki_wrapper.get_intervals(card_ids, complete=True)
+        assert len(result) == 1
+        assert "interval" in result[0]
+        assert "is_learning" in result[0]
+        assert "is_mature" in result[0]
+
+    def test_get_intervals_nonexistent_card(self, anki_wrapper):
+        """Test get_intervals with non-existent card."""
+        result = anki_wrapper.get_intervals([999999])
+        assert len(result) == 1
+        assert result[0] is None
+
     def test_get_api_version(self):
         """Test API version constant."""
         from api.handlers import API_VERSION

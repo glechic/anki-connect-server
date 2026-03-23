@@ -156,10 +156,17 @@ class AnkiWrapper:
         result = {}
         for tmpl in model.get("tmpls", []):
             name = tmpl.get("name", "")
-            qfmt = [f["name"] for f in tmpl.get("qfmt", [])]
-            afmt = [f["name"] for f in tmpl.get("afmt", [])]
-            result[name] = [qfmt, afmt]
+            qfmt = tmpl.get("qfmt", "")
+            afmt = tmpl.get("afmt", "")
+            q_fields = self._extract_fields_from_template(qfmt)
+            a_fields = self._extract_fields_from_template(afmt)
+            result[name] = [q_fields, a_fields]
         return result
+
+    def _extract_fields_from_template(self, template: str) -> list[str]:
+        import re
+        fields = re.findall(r'\{\{([^}]+)\}\}', template)
+        return [f for f in fields if not f.startswith('!')]
 
     def create_model(
         self,
@@ -270,7 +277,10 @@ class AnkiWrapper:
     def notes_info(self, notes: list[int]) -> list[dict]:
         result = []
         for note_id in notes:
-            note = self.col.get_note(NoteId(note_id))
+            try:
+                note = self.col.get_note(NoteId(note_id))
+            except Exception:
+                continue
             if not note:
                 continue
             model = self.col.models.get(note.mid)
@@ -302,7 +312,10 @@ class AnkiWrapper:
     def cards_info(self, cards: list[int]) -> list[dict]:
         result = []
         for card_id in cards:
-            card = self.col.get_card(CardId(card_id))
+            try:
+                card = self.col.get_card(CardId(card_id))
+            except Exception:
+                continue
             if not card:
                 continue
             note = card.note()
@@ -339,7 +352,11 @@ class AnkiWrapper:
     def are_due(self, cards: list[int]) -> list[bool]:
         result = []
         for c in cards:
-            card = self.col.get_card(CardId(c))
+            try:
+                card = self.col.get_card(CardId(c))
+            except Exception:
+                result.append(False)
+                continue
             if card.queue in (1, 3):
                 result.append(True)
             elif card.queue == 2:
@@ -351,7 +368,11 @@ class AnkiWrapper:
     def get_intervals(self, cards: list[int], complete: bool = False) -> list[Any]:
         result = []
         for card_id in cards:
-            card = self.col.get_card(CardId(card_id))
+            try:
+                card = self.col.get_card(CardId(card_id))
+            except Exception:
+                result.append(None)
+                continue
             if not card:
                 result.append(None)
                 continue
