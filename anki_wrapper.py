@@ -80,7 +80,7 @@ class AnkiWrapper:
                 if cards_too:
                     card_ids = self.col.find_cards(f"deck:{deck}")
                     if card_ids:
-                        self.col.remove_cards(card_ids)
+                        self.col.remove_notes(list(self.cards_to_notes(card_ids)))
                 self.col.decks.remove([deck_id])
 
     def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
@@ -348,7 +348,7 @@ class AnkiWrapper:
             if complete:
                 result.append({
                     "interval": card.ivl,
-                    "last_interval": card.lapse,
+                    "last_interval": getattr(card, 'lapses', 0),
                     "is_learning": card.queue in (1, 3),
                     "is_mature": card.ivl >= 21,
                 })
