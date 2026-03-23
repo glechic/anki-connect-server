@@ -13,7 +13,7 @@ SYNC_PORT = 18770
 SYNC_HOST = "127.0.0.1"
 
 
-def run_sync_server(host: str, port: int, user: str, password: str):
+def run_sync_server(host: str, port: int, user: str, password: str):  # pragma: no cover
     """Entry point for the sync server process."""
     os.environ["SYNC_HOST"] = host
     os.environ["SYNC_PORT"] = str(port)
@@ -36,7 +36,7 @@ def sync_server():
 
     process.terminate()
     process.join(timeout=5)
-    if process.is_alive():
+    if process.is_alive():  # pragma: no cover
         process.kill()
         process.join(timeout=5)
 
@@ -77,3 +77,22 @@ class TestSyncServer:
         })
         assert isinstance(result, dict)
         assert "server" in result or "status" in result
+
+    @pytest.mark.asyncio
+    async def test_sync_to_local_server(self, sync_anki_wrapper):
+        """Test that we can sync to a local sync server.
+
+        This test verifies that:
+        1. The sync server accepts connections
+        2. AnkiWrapper.sync_to_ankiweb works with custom credentials
+        """
+        from api.handlers import handle_sync
+
+        wrapper, endpoint = sync_anki_wrapper
+        result = await handle_sync(wrapper, {
+            "endpoint": endpoint,
+            "username": SYNC_USER,
+            "password": SYNC_PASS,
+        })
+        assert isinstance(result, str)
+        assert "sync completed" in result.lower()

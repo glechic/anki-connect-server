@@ -25,7 +25,10 @@ async def handle_version(wrapper: AnkiWrapper, params: dict) -> int:
 
 
 async def handle_sync(wrapper: AnkiWrapper, params: dict) -> str:
-    return await asyncio.to_thread(wrapper.sync_to_ankiweb)
+    endpoint = params.get("endpoint")
+    username = params.get("username")
+    password = params.get("password")
+    return await asyncio.to_thread(wrapper.sync_to_ankiweb, username, password, endpoint)
 
 
 async def handle_sync_status(wrapper: AnkiWrapper, params: dict) -> dict:

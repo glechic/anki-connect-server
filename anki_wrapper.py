@@ -25,19 +25,27 @@ class AnkiWrapper:
         if self.col:
             self.col.close()
 
-    def sync_to_ankiweb(self) -> str:
-        if not config.ANKIWEB_USER or not config.ANKIWEB_PASS:
+    def sync_to_ankiweb(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        endpoint: Optional[str] = None,
+    ) -> str:
+        user = username or config.ANKIWEB_USER
+        pass_ = password or config.ANKIWEB_PASS
+        url = endpoint or config.ANKIWEB_URL
+
+        if not user or not pass_:
             raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for sync")
 
-        endpoint = config.ANKIWEB_URL
         auth = self.col.sync_login(
-            username=config.ANKIWEB_USER,
-            password=config.ANKIWEB_PASS,
-            endpoint=endpoint,
+            username=user,
+            password=pass_,
+            endpoint=url,
         )
-        
+
         result = self.col.sync_collection(auth, sync_media=False)
-        
+
         try:
             if result.required == 3:
                 self.col.close_for_full_sync()
@@ -58,7 +66,7 @@ class AnkiWrapper:
             logger.error(f"Sync failed: {e}")
             self.col = Collection(self.collection_path)
             raise
-        
+
         logger.info(f"Sync completed: host={result.host_number}, required={result.required}")
         return f"sync completed: host={result.host_number}, required={result.required}"
 
