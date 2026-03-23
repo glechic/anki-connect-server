@@ -96,3 +96,25 @@ class TestSyncServer:
         })
         assert isinstance(result, str)
         assert "sync completed" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_sync_auth(self, sync_anki_wrapper):
+        """Test get_sync_auth with sync server credentials."""
+        wrapper, endpoint = sync_anki_wrapper
+        result = wrapper.get_sync_auth()
+        assert result is not None
+        assert hasattr(result, "hkey")
+
+    @pytest.mark.asyncio
+    async def test_sync_media_only(self, sync_anki_wrapper):
+        """Test sync_media_only with sync server credentials."""
+        from api.handlers import handle_sync_media
+
+        wrapper, endpoint = sync_anki_wrapper
+        result = await handle_sync_media(wrapper, {
+            "endpoint": endpoint,
+            "username": SYNC_USER,
+            "password": SYNC_PASS,
+        })
+        assert isinstance(result, str)
+        assert "media" in result.lower()

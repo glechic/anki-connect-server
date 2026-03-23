@@ -439,26 +439,42 @@ class AnkiWrapper:
             "required": getattr(status, "required", 0),
         }
 
-    def sync_media_only(self) -> str:
-        if not config.ANKIWEB_USER or not config.ANKIWEB_PASS:
+    def sync_media_only(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        endpoint: Optional[str] = None,
+    ) -> str:
+        user = username or config.ANKIWEB_USER
+        pass_ = password or config.ANKIWEB_PASS
+        url = endpoint or config.ANKIWEB_URL
+
+        if not user or not pass_:
             raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for media sync")
 
-        endpoint = config.ANKIWEB_URL
         auth = self.col.sync_login(
-            username=config.ANKIWEB_USER,
-            password=config.ANKIWEB_PASS,
-            endpoint=endpoint,
+            username=user,
+            password=pass_,
+            endpoint=url,
         )
         self.col.sync_media(auth)
         logger.info("Media sync completed")
         return "media sync completed"
 
-    def get_sync_auth(self) -> Any:
-        if not config.ANKIWEB_USER or not config.ANKIWEB_PASS:
+    def get_sync_auth(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        endpoint: Optional[str] = None,
+    ) -> Any:
+        user = username or config.ANKIWEB_USER
+        pass_ = password or config.ANKIWEB_PASS
+        url = endpoint or config.ANKIWEB_URL
+
+        if not user or not pass_:
             return None
-        endpoint = config.ANKIWEB_URL
         return self.col.sync_login(
-            username=config.ANKIWEB_USER,
-            password=config.ANKIWEB_PASS,
-            endpoint=endpoint,
+            username=user,
+            password=pass_,
+            endpoint=url,
         )
