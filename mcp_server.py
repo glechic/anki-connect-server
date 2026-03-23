@@ -21,7 +21,6 @@ def create_app() -> FastAPI:
 mcp = FastMCP.from_fastapi(
     create_app(),
     name="Anki Connect MCP Server",
-    asgi_mounts={"/mcp": None},
 )
 
 
