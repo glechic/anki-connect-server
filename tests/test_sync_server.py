@@ -2,7 +2,7 @@
 
 import os
 import tempfile
-import subprocess
+import multiprocessing
 import time
 import pytest
 
@@ -13,8 +13,17 @@ SYNC_PORT = 18770
 SYNC_HOST = "127.0.0.1"
 
 
+def run_sync_server(host: str, port: int, user: str, password: str):
+    """Entry point for the sync server process."""
+    os.environ["SYNC_HOST"] = host
+    os.environ["SYNC_PORT"] = str(port)
+    os.environ["SYNC_USER1"] = f"{user}:{password}"
+    from anki._backend import RustBackend
+    RustBackend.syncserver()
+
+
 class SyncServer:
-    """Context manager for running a sync server in a subprocess."""
+    """Context manager for running a sync server in a multiprocessing.Process."""
 
     def __init__(self, host: str, port: int, user: str, password: str):
         self.host = host
@@ -24,27 +33,21 @@ class SyncServer:
         self.process = None
 
     def __enter__(self):
-        env = os.environ.copy()
-        env["SYNC_USER1"] = f"{self.user}:{self.password}"
-        env["SYNC_HOST"] = self.host
-        env["SYNC_PORT"] = str(self.port)
-
-        self.process = subprocess.Popen(
-            ["uv", "run", "python", "-m", "anki.syncserver"],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        self.process = multiprocessing.Process(
+            target=run_sync_server,
+            args=(self.host, self.port, self.user, self.password),
         )
+        self.process.start()
         time.sleep(2)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.process:
             self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
+            self.process.join(timeout=5)
+            if self.process.is_alive():
                 self.process.kill()
+                self.process.join(timeout=5)
         return False
 
     @property
