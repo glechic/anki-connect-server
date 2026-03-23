@@ -22,45 +22,23 @@ def run_sync_server(host: str, port: int, user: str, password: str):
     RustBackend.syncserver()
 
 
-class SyncServer:
-    """Context manager for running a sync server in a multiprocessing.Process."""
-
-    def __init__(self, host: str, port: int, user: str, password: str):
-        self.host = host
-        self.port = port
-        self.user = user
-        self.password = password
-        self.process = None
-
-    def __enter__(self):
-        self.process = multiprocessing.Process(
-            target=run_sync_server,
-            args=(self.host, self.port, self.user, self.password),
-        )
-        self.process.start()
-        time.sleep(2)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.process:
-            self.process.terminate()
-            self.process.join(timeout=5)
-            if self.process.is_alive():
-                self.process.kill()
-                self.process.join(timeout=5)
-        return False
-
-    @property
-    def url(self) -> str:
-        return f"http://{self.host}:{self.port}"
-
-
 @pytest.fixture
 def sync_server():
     """Provide a running sync server."""
-    server = SyncServer(SYNC_HOST, SYNC_PORT, SYNC_USER, SYNC_PASS)
-    with server:
-        yield server
+    process = multiprocessing.Process(
+        target=run_sync_server,
+        args=(SYNC_HOST, SYNC_PORT, SYNC_USER, SYNC_PASS),
+    )
+    process.start()
+    time.sleep(2)
+
+    yield f"http://{SYNC_HOST}:{SYNC_PORT}"
+
+    process.terminate()
+    process.join(timeout=5)
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=5)
 
 
 @pytest.fixture
@@ -72,7 +50,7 @@ def sync_anki_wrapper(sync_server):
         from anki_wrapper import AnkiWrapper
         wrapper = AnkiWrapper(collection_path)
 
-        yield wrapper, sync_server.url
+        yield wrapper, sync_server
 
         wrapper.close()
 
