@@ -107,21 +107,24 @@ class AnkiWrapper:
         self.col.set_deck([CardId(c) for c in cards], deck_id)
 
     def get_deck_config(self, deck: str) -> dict:
-        config_id = self.col.decks.config_id_for_deck(deck)
-        return self.col.decks.get_config(config_id)
+        deck_id = self.col.decks.id_for_name(deck)
+        if not deck_id:
+            return {}
+        return self.col.decks.config_dict_for_deck_id(deck_id)
 
     def save_deck_config(self, config: dict) -> bool:
-        self.col.decks.save_config(config)
+        self.col.decks.update_config(config)
         return True
 
     def set_deck_config_id(self, decks: list[str], config_id: int) -> bool:
         for deck in decks:
-            deck_id = self.col.decks.id(deck)
-            self.col.decks.set_config_id_for_deck(deck_id, config_id)
+            deck_id = self.col.decks.id_for_name(deck)
+            if deck_id:
+                self.col.decks.set_config_id_for_deck_dict(deck_id, config_id)
         return True
 
     def clone_deck_config_id(self, name: str, clone_from: int) -> int:
-        return self.col.decks.clone_config_id(name, clone_from)
+        return self.col.decks.add_config_returning_id(name, clone_from)
 
     def remove_deck_config_id(self, config_id: int) -> bool:
         self.col.decks.remove_config(config_id)
@@ -176,7 +179,7 @@ class AnkiWrapper:
         css: str = "",
         is_cloze: bool = False,
     ) -> None:
-        notetype = self.col.models.new_note_type(model_name)
+        notetype = self.col.models.new(model_name)
         for i, field_name in enumerate(in_order_fields):
             field = self.col.models.new_field(field_name)
             self.col.models.add_field(notetype, field)
@@ -212,13 +215,13 @@ class AnkiWrapper:
         notetype = self._get_model_by_name(model["name"])
         if not notetype:
             return
-        for name, templates in model.get("templates", {}).items():
-            if name in notetype["tmpls"]:
+        for templates in model.get("templates", {}).values():
+            for tmpl in notetype["tmpls"]:
                 if "Front" in templates:
-                    notetype["tmpls"][name]["qfmt"] = templates["Front"]
+                    tmpl["qfmt"] = templates["Front"]
                 if "Back" in templates:
-                    notetype["tmpls"][name]["afmt"] = templates["Back"]
-        self.col.models.update_notetype(notetype)
+                    tmpl["afmt"] = templates["Back"]
+        self.col.models.update(notetype)
 
     def update_model_styling(self, model: dict) -> None:
         notetype = self._get_model_by_name(model["name"])
@@ -226,7 +229,7 @@ class AnkiWrapper:
             return
         if "css" in model:
             notetype["css"] = model["css"]
-        self.col.models.update_notetype(notetype)
+        self.col.models.update(notetype)
 
     def add_note(self, note: dict) -> Optional[int]:
         model_name = note.get("modelName", "")
