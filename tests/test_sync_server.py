@@ -18,16 +18,20 @@ def run_sync_server(host: str, port: int, user: str, password: str):  # pragma: 
     os.environ["SYNC_HOST"] = host
     os.environ["SYNC_PORT"] = str(port)
     os.environ["SYNC_USER1"] = f"{user}:{password}"
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
     from anki._backend import RustBackend
     RustBackend.syncserver()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True, scope='module')
 def sync_server():
     """Provide a running sync server."""
     process = multiprocessing.Process(
         target=run_sync_server,
         args=(SYNC_HOST, SYNC_PORT, SYNC_USER, SYNC_PASS),
+        daemon=True
     )
     process.start()
     time.sleep(2)
@@ -36,9 +40,13 @@ def sync_server():
 
     process.terminate()
     process.join(timeout=5)
-    if process.is_alive():  # pragma: no cover
+    if process.is_alive():
         process.kill()
-        process.join(timeout=5)
+        process.join(timeout=2)
+    try:
+        process.close()
+    except ValueError:
+        pass  # Already terminated
 
 
 @pytest.fixture

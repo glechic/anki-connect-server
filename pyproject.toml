@@ -36,3 +36,9 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = "--cov=. --cov-report=xml --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "pytest==8.4.2",
+    "pytest-timeout>=2.4.0",
+]
