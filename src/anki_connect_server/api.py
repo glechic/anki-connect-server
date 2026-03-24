@@ -13,10 +13,6 @@ from anki_connect_server.handlers import dispatch
 wrapper: Optional[AnkiWrapper] = None
 
 
-def get_wrapper() -> AnkiWrapper:
-    return AnkiWrapper(config.COLLECTION_PATH)
-
-
 def get_anki_wrapper() -> AnkiWrapper:
     return wrapper
 
@@ -255,19 +251,26 @@ mcp_app = mcp.http_app()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def app_lifespan(app: FastAPI):
     global wrapper
-    wrapper = get_wrapper()
+    wrapper = AnkiWrapper(config.COLLECTION_PATH)
     yield
     if wrapper:
         wrapper.close()
 
 
-app = FastAPI(
+@asynccontextmanager
+async def combined_lifespan(app: FastAPI):
+    async with mcp_app.lifespan(app):
+        async with app_lifespan(app):
+            yield
+
+
+api_app = FastAPI(
     title="AnkiConnect Server",
     description="Headless AnkiConnect-compatible REST API server with AnkiWeb sync",
     version="0.1.0",
-    lifespan=lifespan,
+    lifespan=app_lifespan,
 )
 
 
@@ -282,12 +285,12 @@ class AnkiConnectResponse(BaseModel):
     error: Optional[str] = None
 
 
-@app.get("/health")
+@api_app.get("/health")
 async def health():
     return {"status": "healthy"}
 
 
-@app.post("/", response_model=AnkiConnectResponse)
+@api_app.post("/", response_model=AnkiConnectResponse)
 async def handle_request(req: AnkiConnectRequest):
     if not wrapper:
         return {"result": None, "error": "Server not initialized"}
@@ -299,7 +302,14 @@ async def handle_request(req: AnkiConnectRequest):
         return {"result": None, "error": str(e)}
 
 
-app.mount("/", mcp_app)
+app = FastAPI(
+    title="AnkiConnect Server with MCP",
+    routes=[
+        *mcp_app.routes,
+        *api_app.routes,
+    ],
+    lifespan=combined_lifespan,
+)
 
 
 if __name__ == "__main__":
