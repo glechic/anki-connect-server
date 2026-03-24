@@ -1,8 +1,4 @@
-import os
-from typing import Any, Optional
-
 from fastmcp import FastMCP
-from fastapi import FastAPI
 
 from anki_connect_server.config import Config
 from anki_connect_server.anki_wrapper import AnkiWrapper
@@ -13,18 +9,7 @@ def get_wrapper() -> AnkiWrapper:
     return AnkiWrapper(Config.COLLECTION_PATH)
 
 
-def create_app() -> FastAPI:
-    from anki_connect_server import app
-    return app
-
-
-mcp = FastMCP.from_fastapi(
-    create_app(),
-    name="Anki Connect MCP Server",
-)
-
-
-_wrapper: Optional[AnkiWrapper] = None
+_wrapper = None
 
 
 def get_anki_wrapper() -> AnkiWrapper:
@@ -32,6 +17,11 @@ def get_anki_wrapper() -> AnkiWrapper:
     if _wrapper is None:
         _wrapper = get_wrapper()
     return _wrapper
+
+
+mcp = FastMCP(
+    name="Anki Connect MCP Server",
+)
 
 
 @mcp.tool
@@ -72,15 +62,8 @@ def get_model_field_names(model_name: str) -> list[str]:
 
 
 @mcp.tool
-def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: Optional[list[str]] = None) -> Optional[int]:
-    """Add a new note to the collection.
-    
-    Args:
-        deck_name: Name of the deck to add the note to
-        model_name: Name of the note model (e.g., "Basic", "Cloze")
-        fields: Dictionary of field names to values
-        tags: Optional list of tags to add
-    """
+def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] = None) -> int:
+    """Add a new note to the collection."""
     note = {
         "deckName": deck_name,
         "modelName": model_name,
@@ -93,13 +76,7 @@ def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: Opti
 
 @mcp.tool
 def find_notes(query: str) -> list[int]:
-    """Find notes matching the given search query.
-    
-    Examples of queries:
-    - "deck:Default" - notes in Default deck
-    - "tag:important" - notes with tag "important"
-    - "note:Basic" - notes using Basic model
-    """
+    """Find notes matching the given search query."""
     return get_anki_wrapper().find_notes(query)
 
 
@@ -153,8 +130,8 @@ def are_due(cards: list[int]) -> list[bool]:
 
 
 @mcp.tool
-def get_card_intervals(cards: list[int], complete: bool = False) -> list[Any]:
-    """Get intervals for cards. Set complete=True for all intervals."""
+def get_card_intervals(cards: list[int], complete: bool = False) -> list:
+    """Get intervals for cards."""
     return get_anki_wrapper().get_intervals(cards, complete)
 
 
@@ -166,14 +143,14 @@ def get_all_tags() -> list[str]:
 
 @mcp.tool
 def add_tags(notes: list[int], tags: str) -> bool:
-    """Add tags to notes. Tags should be space-separated."""
+    """Add tags to notes."""
     get_anki_wrapper().add_tags(notes, tags)
     return True
 
 
 @mcp.tool
 def remove_tags(notes: list[int], tags: str) -> bool:
-    """Remove tags from notes. Tags should be space-separated."""
+    """Remove tags from notes."""
     get_anki_wrapper().remove_tags(notes, tags)
     return True
 
@@ -185,6 +162,43 @@ def get_media_dir_path() -> str:
 
 
 @mcp.tool
+def change_deck(cards: list[int], deck: str) -> bool:
+    """Move cards to a different deck."""
+    get_anki_wrapper().change_deck(cards, deck)
+    return True
+
+
+@mcp.tool
+def cards_to_notes(cards: list[int]) -> list[int]:
+    """Convert card IDs to note IDs."""
+    return get_anki_wrapper().cards_to_notes(cards)
+
+
+@mcp.tool
+def get_deck_config(deck: str) -> dict:
+    """Get deck configuration."""
+    return get_anki_wrapper().get_deck_config(deck)
+
+
+@mcp.tool
+def get_model_templates(model_name: str) -> dict:
+    """Get card templates for a model."""
+    return get_anki_wrapper().model_templates(model_name)
+
+
+@mcp.tool
+def get_model_styling(model_name: str) -> dict:
+    """Get CSS styling for a model."""
+    return get_anki_wrapper().model_styling(model_name)
+
+
+@mcp.tool
+def get_api_version() -> int:
+    """Get the AnkiConnect API version."""
+    return 6
+
+
+@mcp.tool
 def store_media_file(filename: str, data: str) -> bool:
     """Store a media file. Data should be base64 encoded."""
     get_anki_wrapper().store_media_file(filename, data)
@@ -192,7 +206,7 @@ def store_media_file(filename: str, data: str) -> bool:
 
 
 @mcp.tool
-def retrieve_media_file(filename: str) -> Optional[str]:
+def retrieve_media_file(filename: str) -> str:
     """Retrieve a media file. Returns base64 encoded data."""
     return get_anki_wrapper().retrieve_media_file(filename)
 
@@ -235,51 +249,8 @@ def get_sync_status() -> dict:
     return get_anki_wrapper().sync_status()
 
 
-@mcp.tool
-def get_api_version() -> int:
-    """Get the AnkiConnect API version."""
-    return 6
-
-
-@mcp.tool
-def change_deck(cards: list[int], deck: str) -> bool:
-    """Move cards to a different deck."""
-    get_anki_wrapper().change_deck(cards, deck)
-    return True
-
-
-@mcp.tool
-def cards_to_notes(cards: list[int]) -> list[int]:
-    """Convert card IDs to note IDs."""
-    return get_anki_wrapper().cards_to_notes(cards)
-
-
-@mcp.tool
-def get_deck_config(deck: str) -> dict:
-    """Get deck configuration."""
-    return get_anki_wrapper().get_deck_config(deck)
-
-
-@mcp.tool
-def get_model_templates(model_name: str) -> dict:
-    """Get card templates for a model."""
-    return get_anki_wrapper().model_templates(model_name)
-
-
-@mcp.tool
-def get_model_styling(model_name: str) -> dict:
-    """Get CSS styling for a model."""
-    return get_anki_wrapper().model_styling(model_name)
-
-
 def main():
-    import sys
-    print(sys.argv)
-    if len(sys.argv) > 1 and sys.argv[1] == "server":
-
-        mcp.run(transport='http')
-    else:
-        mcp.run(transport="stdio")
+    mcp.run()
 
 
 if __name__ == "__main__":

@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 
 @pytest.fixture
-def mcp_wrapper():
-    """Create an AnkiWrapper for MCP testing."""
+def api_wrapper():
+    """Create an AnkiWrapper for API testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         collection_path = os.path.join(tmpdir, "test.anki21")
         media_path = collection_path + "-media"
@@ -23,12 +23,12 @@ def mcp_wrapper():
 
 
 @pytest.fixture(autouse=True)
-def patch_mcp_wrapper(mcp_wrapper):
-    """Auto-patch the global _wrapper in mcp_server for each test."""
+def patch_api_wrapper(api_wrapper):
+    """Auto-patch the global wrapper in mcp_server for each test."""
     from anki_connect_server import mcp_server
     original_wrapper = mcp_server._wrapper
-    mcp_server._wrapper = mcp_wrapper
-    yield mcp_wrapper
+    mcp_server._wrapper = api_wrapper
+    yield api_wrapper
     mcp_server._wrapper = original_wrapper
 
 

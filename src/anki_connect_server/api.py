@@ -1,11 +1,10 @@
-import os
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 
-from anki_connect_server.config import config, Config
+from anki_connect_server.config import config
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.handlers import dispatch
 
