@@ -118,5 +118,5 @@ class TestAnkiWrapperIntegration:
 
     def test_get_api_version(self):
         """Test API version constant."""
-        from api.handlers import API_VERSION
+        from anki_connect_server.handlers import API_VERSION
         assert API_VERSION == 6

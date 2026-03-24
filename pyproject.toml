@@ -25,7 +25,6 @@ dev = [
 
 [project.scripts]
 server = "anki_connect_server.api:run_server"
-mcp-server = "anki_connect_server.mcp_server:main"
 
 [tool.uv]
 package = true
