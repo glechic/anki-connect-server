@@ -11,7 +11,7 @@ def anki_wrapper():
     with tempfile.TemporaryDirectory() as tmpdir:
         collection_path = os.path.join(tmpdir, "test.anki21")
 
-        from anki_wrapper import AnkiWrapper
+        from anki_connect_server.anki_wrapper import AnkiWrapper
         wrapper = AnkiWrapper(collection_path)
 
         yield wrapper

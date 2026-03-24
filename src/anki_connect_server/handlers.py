@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from typing import Any, Optional
-from anki_wrapper import AnkiWrapper
+from anki_connect_server.anki_wrapper import AnkiWrapper
 
 logger = logging.getLogger(__name__)
 

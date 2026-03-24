@@ -19,17 +19,16 @@ dev = [
     "ruff>=0.1.0",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-cov>=7.1.0",
     "httpx>=0.24.0",
 ]
 
+[project.scripts]
+server = "anki_connect_server.api:run_server"
+mcp-server = "anki_connect_server.mcp_server:main"
+
 [tool.uv]
-dev-dependencies = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "httpx>=0.24.0",
-    "requests>=2.31.0",
-    "pytest-cov>=7.1.0",
-]
+package = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -4,8 +4,8 @@ from typing import Any, Optional
 from fastmcp import FastMCP
 from fastapi import FastAPI
 
-from config import Config
-from anki_wrapper import AnkiWrapper
+from anki_connect_server.config import Config
+from anki_connect_server.anki_wrapper import AnkiWrapper
 
 
 def get_wrapper() -> AnkiWrapper:
@@ -14,8 +14,8 @@ def get_wrapper() -> AnkiWrapper:
 
 
 def create_app() -> FastAPI:
-    from main import app as fastapi_app
-    return fastapi_app
+    from anki_connect_server import app
+    return app
 
 
 mcp = FastMCP.from_fastapi(
@@ -272,9 +272,15 @@ def get_model_styling(model_name: str) -> dict:
     return get_anki_wrapper().model_styling(model_name)
 
 
-if __name__ == "__main__":
+def main():
     import sys
+    print(sys.argv)
     if len(sys.argv) > 1 and sys.argv[1] == "server":
-        mcp.run()
+
+        mcp.run(transport='http')
     else:
         mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

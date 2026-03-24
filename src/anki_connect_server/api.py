@@ -5,9 +5,9 @@ from typing import Any, Optional
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-from config import config, Config
-from anki_wrapper import AnkiWrapper
-from api.handlers import dispatch
+from anki_connect_server.config import config, Config
+from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.handlers import dispatch
 
 
 wrapper: Optional[AnkiWrapper] = None
@@ -59,5 +59,9 @@ async def handle_request(req: AnkiConnectRequest):
 
 
 if __name__ == "__main__":
+    run_server()
+
+
+def run_server():
     import uvicorn
     uvicorn.run(app, host=config.BIND, port=config.PORT)

@@ -10,7 +10,7 @@ from anki.decks import DeckId
 from anki.notes import Note, NoteId
 from anki.models import NotetypeDict
 
-from config import config
+from anki_connect_server.config import config
 
 logger = logging.getLogger(__name__)
 

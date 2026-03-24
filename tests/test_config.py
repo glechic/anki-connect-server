@@ -5,7 +5,7 @@ import pytest
 
 def test_config_defaults():
     """Test that config has correct defaults."""
-    from config import Config
+    from anki_connect_server.config import Config
     cfg = Config(COLLECTION_PATH="/test/path.anki21")
     assert cfg.PORT == 8765
     assert cfg.BIND == "127.0.0.1"
@@ -13,7 +13,7 @@ def test_config_defaults():
 
 def test_config_custom_values():
     """Test custom configuration values."""
-    from config import Config
+    from anki_connect_server.config import Config
     cfg = Config(
         PORT=9000,
         BIND="0.0.0.0",
@@ -25,7 +25,7 @@ def test_config_custom_values():
 
 def test_config_ankiweb():
     """Test AnkiWeb configuration."""
-    from config import Config
+    from anki_connect_server.config import Config
     cfg = Config(
         COLLECTION_PATH="/test/path.anki21",
         ANKIWEB_USER="test@example.com",
@@ -37,7 +37,7 @@ def test_config_ankiweb():
 
 def test_config_optional_ankiweb(monkeypatch):
     """Test that AnkiWeb config is optional when not set in env."""
-    from config import Config
+    from anki_connect_server.config import Config
     monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/test/path.anki21")
     monkeypatch.delenv("ANKICONNECT_ANKIWEB_USER", raising=False)
     monkeypatch.delenv("ANKICONNECT_ANKIWEB_PASS", raising=False)
@@ -49,14 +49,14 @@ def test_config_optional_ankiweb(monkeypatch):
 
 def test_validate_raises_without_collection_path():
     """Test that validation raises error without collection path."""
-    from config import Config
+    from anki_connect_server.config import Config
     with pytest.raises(Exception, match="ANKICONNECT_COLLECTION_PATH"):
         Config(COLLECTION_PATH="")
 
 
 def test_validate_passes_with_collection_path():
     """Test that validation passes with collection path."""
-    from config import Config
+    from anki_connect_server.config import Config
     cfg = Config(COLLECTION_PATH="/test/path.anki21")
     assert cfg.COLLECTION_PATH == "/test/path.anki21"
 
@@ -69,7 +69,7 @@ def test_config_loads_from_env(monkeypatch):
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_URL", "https://sync.example.com")
     
     import importlib
-    import config
+    import anki_connect_server.config as config
     importlib.reload(config)
     
     assert config.config.PORT == 9000

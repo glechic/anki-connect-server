@@ -4,13 +4,13 @@ import pytest
 from unittest.mock import patch
 from httpx import AsyncClient, ASGITransport
 
-from main import app
+from anki_connect_server import app
 
 
 @pytest.fixture
 def app_with_wrapper(anki_wrapper):
     """Patch the app to use the real anki_wrapper."""
-    with patch("main.wrapper", anki_wrapper):
+    with patch("anki_connect_server.api.wrapper", anki_wrapper):
         yield anki_wrapper
 
 
