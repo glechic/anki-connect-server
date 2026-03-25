@@ -5,22 +5,16 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy pyproject.toml first for dependency caching
+# Copy pyproject.toml and install dependencies
 COPY pyproject.toml ./
-
-# Install dependencies
-RUN uv sync --frozen --no-install-project --no-dev
+COPY uv.lock ./
+RUN uv sync --locked
 
 # Copy source code
-COPY src/ ./src/
-COPY tests/ ./tests/
-COPY README.md ./
-COPY AGENTS.md ./
-COPY .env.example ./
+COPY . ./
 
-# Create non-root user
-RUN useradd --create-home appuser
-USER appuser
+# Create data directory for collection
+RUN mkdir -p /data
 
 # Environment variables
 ENV ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
@@ -30,5 +24,5 @@ ENV ANKICONNECT_BIND=0.0.0.0
 # Expose port
 EXPOSE 8765
 
-# Run the server
+# Run the server directly
 CMD ["uv", "run", "server"]

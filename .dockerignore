@@ -12,7 +12,6 @@ coverage.xml
 build
 dist
 new
-uv.lock
 *.db
 *.db-wal
 *.db-shm

@@ -21,12 +21,5 @@ class Config(BaseSettings):
 
     ANKIWEB_URL: Optional[str] = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_collection_path(cls, values):
-        if not values.get("COLLECTION_PATH"):
-            raise ValueError("ANKICONNECT_COLLECTION_PATH environment variable is required")
-        return values
 
-
-config = Config()
+config = Config().model_validate({})
