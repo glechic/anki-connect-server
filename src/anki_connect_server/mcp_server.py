@@ -6,7 +6,7 @@ from anki_connect_server.anki_wrapper import AnkiWrapper
 
 
 def get_wrapper() -> AnkiWrapper:
-    Config.validate()
+    Config.model_validate({})
     return AnkiWrapper(Config.COLLECTION_PATH)
 
 
@@ -57,7 +57,7 @@ def get_model_field_names(model_name: str) -> list[str]:
 
 
 @mcp.tool
-def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] = None) -> int:
+def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] = []) -> int | None:
     """Add a new note to the collection."""
     note = {
         "deckName": deck_name,
@@ -201,7 +201,7 @@ def store_media_file(filename: str, data: str) -> bool:
 
 
 @mcp.tool
-def retrieve_media_file(filename: str) -> str:
+def retrieve_media_file(filename: str) -> str | None:
     """Retrieve a media file."""
     return wrapper.get_anki_wrapper().retrieve_media_file(filename)
 
@@ -242,6 +242,9 @@ def sync_media() -> str:
 def get_sync_status() -> dict:
     """Get sync status from AnkiWeb."""
     return wrapper.get_anki_wrapper().sync_status()
+
+
+mcp_app = mcp.http_app()
 
 
 def main():

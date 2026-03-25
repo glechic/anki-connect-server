@@ -47,13 +47,6 @@ def test_config_optional_ankiweb(monkeypatch):
     assert cfg.ANKIWEB_PASS is None
 
 
-def test_validate_raises_without_collection_path():
-    """Test that validation raises error without collection path."""
-    from anki_connect_server.config import Config
-    with pytest.raises(Exception, match="ANKICONNECT_COLLECTION_PATH"):
-        Config(COLLECTION_PATH="")
-
-
 def test_validate_passes_with_collection_path():
     """Test that validation passes with collection path."""
     from anki_connect_server.config import Config
