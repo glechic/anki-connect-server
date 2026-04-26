@@ -126,3 +126,64 @@ class TestSyncServer:
         })
         assert isinstance(result, str)
         assert "media" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_sync_media_only_with_missing_credentials(self, anki_wrapper):
+        """Test sync_media_only raises error when credentials are missing."""
+        from anki_connect_server.handlers import handle_sync_media
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = None
+        config.ANKIWEB_PASS = None
+
+        try:
+            with pytest.raises(ValueError, match="required for media sync"):
+                await handle_sync_media(anki_wrapper, {})
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
+    @pytest.mark.asyncio
+    async def test_sync_media_only_partial_params(self, sync_anki_wrapper):
+        """Test sync_media_only works with only username in params (password from config)."""
+        from anki_connect_server.handlers import handle_sync_media
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = SYNC_USER
+        config.ANKIWEB_PASS = SYNC_PASS
+
+        wrapper, endpoint = sync_anki_wrapper
+        try:
+            result = await handle_sync_media(wrapper, {"endpoint": endpoint})
+            assert isinstance(result, str)
+            assert "media" in result.lower()
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
+
+class TestMediaFileOperations:
+    """Test media file operations with local sync server."""
+
+    @pytest.mark.asyncio
+    async def test_retrieve_nonexistent_media_file(self, sync_anki_wrapper):
+        """Test retrieving a file that doesn't exist returns None."""
+        from anki_connect_server.handlers import handle_retrieve_media_file
+
+        wrapper, endpoint = sync_anki_wrapper
+        result = await handle_retrieve_media_file(wrapper, {"filename": "nonexistent.txt"})
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_media_dir_path(self, sync_anki_wrapper):
+        """Test getting media directory path."""
+        from anki_connect_server.handlers import handle_get_media_dir_path
+
+        wrapper, endpoint = sync_anki_wrapper
+        result = await handle_get_media_dir_path(wrapper, {})
+        assert result is not None
+        assert len(result) > 0

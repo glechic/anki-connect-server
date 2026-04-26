@@ -325,6 +325,13 @@ class TestMediaHandlers:
         assert result is not None
         assert len(result) > 0
 
+    @pytest.mark.asyncio
+    async def test_handle_retrieve_media_file_not_found(self, anki_wrapper):
+        """Test retrieveMediaFile handler returns None for missing file."""
+        from anki_connect_server.handlers import handle_retrieve_media_file
+        result = await handle_retrieve_media_file(anki_wrapper, {"filename": "nonexistent.txt"})
+        assert result is None
+
 
 class TestMultiHandler:
     """Test multi action handler."""

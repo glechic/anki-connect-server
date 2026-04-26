@@ -8,7 +8,6 @@ from anki_connect_server.config import config
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.handlers import dispatch
 from anki_connect_server import wrapper
-from anki_connect_server.mcp_server import mcp, mcp_app
 
 
 @asynccontextmanager
@@ -18,14 +17,7 @@ async def app_lifespan(app: FastAPI):
     wrapper.close_wrapper()
 
 
-@asynccontextmanager
-async def combined_lifespan(app: FastAPI):
-    async with mcp_app.lifespan(app):
-        async with app_lifespan(app):
-            yield
-
-
-api_app = FastAPI(
+app = FastAPI(
     title="AnkiConnect Server",
     description="Headless AnkiConnect-compatible REST API server with AnkiWeb sync",
     version="0.1.0",
@@ -44,12 +36,12 @@ class AnkiConnectResponse(BaseModel):
     error: Optional[str] = None
 
 
-@api_app.get("/health")
+@app.get("/health")
 async def health():
     return {"status": "healthy"}
 
 
-@api_app.post("/", response_model=AnkiConnectResponse)
+@app.post("/api", response_model=AnkiConnectResponse)
 async def handle_request(req: AnkiConnectRequest):
     if not wrapper.get_anki_wrapper():
         return {"result": None, "error": "Server not initialized"}
@@ -61,20 +53,6 @@ async def handle_request(req: AnkiConnectRequest):
         return {"result": None, "error": str(e)}
 
 
-app = FastAPI(
-    title="AnkiConnect Server with MCP",
-    routes=[
-        *mcp_app.routes,
-        *api_app.routes,
-    ],
-    lifespan=combined_lifespan,
-)
-
-
-def run_server():
+if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=config.BIND, port=config.PORT)
-
-
-if __name__ == "__main__":
-    run_server()

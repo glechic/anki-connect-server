@@ -210,3 +210,9 @@ class TestMCPWrapper:
         from anki_connect_server.mcp_server import get_api_version
         result = get_api_version()
         assert result == 6
+
+    def test_retrieve_media_file_not_found(self):
+        """Test retrieve_media_file returns None for missing file."""
+        from anki_connect_server.mcp_server import retrieve_media_file
+        result = retrieve_media_file("nonexistent_mcp.txt")
+        assert result is None
