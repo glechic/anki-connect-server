@@ -247,14 +247,10 @@ def get_sync_status() -> dict:
 mcp_app = mcp.http_app()
 
 
-def main():
+def run():
     init_wrapper()
     mcp.run()
 
 
-def run():
-    main()
-
-
 if __name__ == "__main__":
-    main()
+    run()
