@@ -32,7 +32,6 @@ Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MC
 - [API Reference](#-api-reference)
 - [MCP Server](#-mcp-server)
 - [Docker](#-docker)
-- [Docker](#-docker)
 
 ## 🔧 Requirements
 
