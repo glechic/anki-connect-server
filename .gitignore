@@ -18,4 +18,3 @@ build/
 coverage.xml
 anki_db
 anki_db-wal
-uv.lock
