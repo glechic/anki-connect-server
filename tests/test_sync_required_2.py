@@ -207,6 +207,94 @@ class TestRequired2Behavior:
             config.ANKIWEB_USER = original_user
             config.ANKIWEB_PASS = original_pass
 
+    def test_concurrent_sync_rejected(self):
+        """A second sync while one is in progress must raise SyncError, not corrupt state."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch
+
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = "test"
+        config.ANKIWEB_PASS = "test"
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                collection_path = os.path.join(tmpdir, "test.anki21")
+
+                mock_col = Mock()
+                mock_auth = Mock(hkey="test_key")
+                mock_result = Mock()
+                mock_result.required = 0
+                mock_result.host_number = 7
+                mock_result.server_media_usn = 0
+
+                mock_col.sync_login = Mock(return_value=mock_auth)
+                mock_col.sync_collection = Mock(return_value=mock_result)
+                mock_col.close = Mock()
+                mock_col.full_upload_or_download = Mock()
+
+                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                    from anki_connect_server.anki_wrapper import AnkiWrapper, SyncError
+                    wrapper = AnkiWrapper(collection_path)
+
+                    # Acquire the lock manually to simulate an in-progress sync.
+                    assert wrapper._sync_lock.acquire(blocking=False) is True
+                    try:
+                        with pytest.raises(SyncError, match="already in progress"):
+                            wrapper.sync_to_ankiweb()
+                    finally:
+                        wrapper._sync_lock.release()
+
+                    # After release, sync must work again.
+                    mock_col.full_upload_or_download.reset_mock()
+                    wrapper.sync_to_ankiweb()
+                    mock_col.full_upload_or_download.assert_not_called()
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
+    def test_abort_sync_calls_both_abort_methods(self):
+        """abort_sync must call col.abort_sync and col.abort_media_sync."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            collection_path = os.path.join(tmpdir, "test.anki21")
+
+            mock_col = Mock()
+            with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                from anki_connect_server.anki_wrapper import AnkiWrapper
+                wrapper = AnkiWrapper(collection_path)
+
+                wrapper.abort_sync()
+                mock_col.abort_sync.assert_called_once()
+                mock_col.abort_media_sync.assert_called_once()
+
+    def test_abort_sync_swallows_errors(self):
+        """abort_sync must not raise even if the underlying abort methods fail."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            collection_path = os.path.join(tmpdir, "test.anki21")
+
+            mock_col = Mock()
+            mock_col.abort_sync = Mock(side_effect=RuntimeError("boom"))
+            mock_col.abort_media_sync = Mock(side_effect=RuntimeError("boom2"))
+            with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                from anki_connect_server.anki_wrapper import AnkiWrapper
+                wrapper = AnkiWrapper(collection_path)
+
+                # Must not raise.
+                wrapper.abort_sync()
+                mock_col.abort_sync.assert_called_once()
+                mock_col.abort_media_sync.assert_called_once()
+
     def test_error_shows_exception_type(self, caplog):
         """Test that errors include exception type, not just message."""
         import logging

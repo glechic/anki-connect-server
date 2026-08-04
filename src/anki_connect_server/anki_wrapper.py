@@ -1,6 +1,7 @@
 import os
 import base64
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,21 +16,53 @@ from anki_connect_server.config import config
 logger = logging.getLogger(__name__)
 
 
+class SyncError(RuntimeError):
+    """Raised when an AnkiWeb sync operation cannot be performed safely."""
+
+
 class AnkiWrapper:
     def __init__(self, collection_path: str):
         Collection.initialize_backend_logging()
         self.collection_path = collection_path
         self.col = Collection(collection_path)
+        self._sync_lock = threading.Lock()
 
     def close(self):
         if self.col:
             self.col.close()
+
+    def abort_sync(self) -> None:
+        """Abort any in-progress collection and media syncs."""
+        col = getattr(self, "col", None)
+        if col is None:
+            return
+        try:
+            col.abort_sync()
+        except Exception as e:
+            logger.warning(f"abort_sync: col.abort_sync failed: {type(e).__name__}: {e}")
+        try:
+            col.abort_media_sync()
+        except Exception as e:
+            logger.warning(f"abort_sync: col.abort_media_sync failed: {type(e).__name__}: {e}")
 
     def sync_to_ankiweb(
         self,
         username: Optional[str] = None,
         password: Optional[str] = None,
         endpoint: Optional[str] = None,
+    ) -> str:
+        if not self._sync_lock.acquire(blocking=False):
+            raise SyncError("Another sync is already in progress; abort it before starting a new one")
+        try:
+            return self._sync_to_ankiweb_locked(username, password, endpoint)
+        finally:
+            self._sync_lock.release()
+
+    def _sync_to_ankiweb_locked(
+        self,
+        username: Optional[str],
+        password: Optional[str],
+        endpoint: Optional[str],
     ) -> str:
         user = username or config.ANKIWEB_USER
         pass_ = password or config.ANKIWEB_PASS
