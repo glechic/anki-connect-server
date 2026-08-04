@@ -201,6 +201,7 @@ async def handle_get_tags(wrapper: AnkiWrapper, params: dict) -> list[str]:
 
 
 async def handle_find_notes(wrapper: AnkiWrapper, params: dict) -> list[int]:
+    require_params(params, "query")
     query = params.get("query", "")
     return wrapper.find_notes(query)
 
@@ -216,6 +217,7 @@ async def handle_delete_notes(wrapper: AnkiWrapper, params: dict) -> None:
 
 
 async def handle_find_cards(wrapper: AnkiWrapper, params: dict) -> list[int]:
+    require_params(params, "query")
     query = params.get("query", "")
     return wrapper.find_cards(query)
 

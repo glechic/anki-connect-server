@@ -181,6 +181,14 @@ class TestNoteHandlers:
         assert isinstance(result, list)
 
     @pytest.mark.asyncio
+    async def test_handle_find_notes_missing_query_raises(self, anki_wrapper):
+        """findNotes without a query must raise -- otherwise Anki returns the
+        entire collection, silently leaking every note id to the caller."""
+        from anki_connect_server.handlers import handle_find_notes, ValidationError
+        with pytest.raises(ValidationError, match="Missing required parameters: query"):
+            await handle_find_notes(anki_wrapper, {})
+
+    @pytest.mark.asyncio
     async def test_handle_notes_info(self, anki_wrapper):
         """Test notesInfo handler."""
         from anki_connect_server.handlers import handle_notes_info
@@ -219,6 +227,14 @@ class TestCardHandlers:
         })
         result = await handle_find_cards(anki_wrapper, {"query": "CardTest"})
         assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_handle_find_cards_missing_query_raises(self, anki_wrapper):
+        """findCards without a query must raise -- otherwise Anki returns the
+        entire collection, silently leaking every card id to the caller."""
+        from anki_connect_server.handlers import handle_find_cards, ValidationError
+        with pytest.raises(ValidationError, match="Missing required parameters: query"):
+            await handle_find_cards(anki_wrapper, {})
 
     @pytest.mark.asyncio
     async def test_handle_cards_to_notes(self, anki_wrapper):
