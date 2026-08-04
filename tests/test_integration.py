@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+
 import pytest
 
 
@@ -12,6 +13,7 @@ def anki_wrapper():
         collection_path = os.path.join(tmpdir, "test.anki21")
 
         from anki_connect_server.anki_wrapper import AnkiWrapper
+
         wrapper = AnkiWrapper(collection_path)
 
         yield wrapper
@@ -57,11 +59,13 @@ class TestAnkiWrapperIntegration:
 
     def test_get_decks(self, anki_wrapper):
         """Test get_decks returns correct mapping."""
-        note_id = anki_wrapper.add_note({
-            "deckName": "Default",
-            "modelName": "Basic",
-            "fields": {"Front": "Test", "Back": "Test"}
-        })
+        note_id = anki_wrapper.add_note(
+            {
+                "deckName": "Default",
+                "modelName": "Basic",
+                "fields": {"Front": "Test", "Back": "Test"},
+            }
+        )
         card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
         result = anki_wrapper.get_decks(card_ids)
         assert "Default" in result
@@ -84,7 +88,7 @@ class TestAnkiWrapperIntegration:
             "TestModel",
             ["Field1", "Field2"],
             [{"Name": "Card 1", "Front": "{{Field1}}", "Back": "{{Field2}}"}],
-            css=".card { }"
+            css=".card { }",
         )
         models = anki_wrapper.model_names()
         assert "TestModel" in models
@@ -97,26 +101,20 @@ class TestAnkiWrapperIntegration:
 
     def test_update_model_templates(self, anki_wrapper):
         """Test update_model_templates."""
-        result = anki_wrapper.update_model_templates({
-            "name": "Basic",
-            "templates": {
-                "Card 1": {
-                    "Front": "{{Front}}",
-                    "Back": "{{Back}}"
-                }
-            }
-        })
+        result = anki_wrapper.update_model_templates(
+            {"name": "Basic", "templates": {"Card 1": {"Front": "{{Front}}", "Back": "{{Back}}"}}}
+        )
         assert result is None
 
     def test_update_model_styling(self, anki_wrapper):
         """Test update_model_styling."""
-        result = anki_wrapper.update_model_styling({
-            "name": "Basic",
-            "css": ".card { background: #fff; }"
-        })
+        result = anki_wrapper.update_model_styling(
+            {"name": "Basic", "css": ".card { background: #fff; }"}
+        )
         assert result is None
 
     def test_get_api_version(self):
         """Test API version constant."""
         from anki_connect_server.handlers import API_VERSION
+
         assert API_VERSION == 6

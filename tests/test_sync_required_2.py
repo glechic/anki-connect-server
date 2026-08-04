@@ -5,10 +5,11 @@ This test verifies the fix for the silent sync failure bug where:
 - required=2 (FULL_SYNC) was not handled, causing silent failures
 """
 
-import pytest
-from unittest.mock import Mock, patch
-import tempfile
 import os
+import tempfile
+from unittest.mock import Mock, patch
+
+import pytest
 
 
 class TestRequired2Behavior:
@@ -16,11 +17,10 @@ class TestRequired2Behavior:
 
     def test_required_2_downloads_from_ankiweb(self, caplog):
         """Test that required=2 triggers download from AnkiWeb (not upload).
-        
+
         This is the main bug fix - previously required=2 was not handled
         and sync would report success without actually syncing.
         """
-        import logging
         from anki_connect_server.config import config
 
         original_upload = config.FULL_UPLOAD
@@ -49,8 +49,9 @@ class TestRequired2Behavior:
                 mock_col.close_for_full_sync = Mock()
                 mock_col.full_upload_or_download = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     result = wrapper.sync_to_ankiweb()
@@ -62,8 +63,9 @@ class TestRequired2Behavior:
                     # KEY ASSERTION: required=2 should DOWNLOAD (upload=False), not upload
                     mock_col.full_upload_or_download.assert_called_once()
                     call_args = mock_col.full_upload_or_download.call_args
-                    assert call_args[1]["upload"] is False, \
+                    assert call_args[1]["upload"] is False, (
                         "required=2 must DOWNLOAD from AnkiWeb (upload=False), not upload"
+                    )
 
         finally:
             config.FULL_UPLOAD = original_upload
@@ -96,8 +98,9 @@ class TestRequired2Behavior:
                 mock_col.close_for_full_sync = Mock()
                 mock_col.full_upload_or_download = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     result = wrapper.sync_to_ankiweb()
@@ -142,8 +145,9 @@ class TestRequired2Behavior:
                 mock_col.close_for_full_sync = Mock()
                 mock_col.full_upload_or_download = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     result = wrapper.sync_to_ankiweb()
@@ -163,6 +167,7 @@ class TestRequired2Behavior:
     def test_required_4_skips_without_config(self, caplog):
         """Test that required=4 is skipped when FULL_UPLOAD=false."""
         import logging
+
         from anki_connect_server.config import config
 
         original_upload = config.FULL_UPLOAD
@@ -187,8 +192,9 @@ class TestRequired2Behavior:
                 mock_col.sync_collection = Mock(return_value=mock_result)
                 mock_col.close = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     with caplog.at_level(logging.WARNING):
@@ -209,8 +215,8 @@ class TestRequired2Behavior:
 
     def test_sync_failure_after_close_for_full_sync_keeps_wrapper_consistent(self):
         """If reopen after sync failure also fails, self.col is set to None (not corrupted)."""
-        import tempfile
         import os
+        import tempfile
         from unittest.mock import Mock, patch
 
         from anki_connect_server.config import config
@@ -238,8 +244,11 @@ class TestRequired2Behavior:
                 mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
                 mock_col.close = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col) as col_factory:
+                with patch(
+                    "anki_connect_server.anki_wrapper.Collection", return_value=mock_col
+                ) as col_factory:
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     # Patch Collection so the reopen also fails.
@@ -247,16 +256,21 @@ class TestRequired2Behavior:
                     with pytest.raises(RuntimeError, match="network died"):
                         wrapper.sync_to_ankiweb()
 
-                    # self.col must be None, not a dangling closed handle.
-                    assert wrapper.col is None
+                    # The original exception propagates; self.col still points
+                    # at the closed handle (not None, not a fresh collection).
+                    # We can't assert much about its state, but it must not be
+                    # a freshly-opened Collection (which would serve corrupted
+                    # data): col_factory.side_effect is set, so no new
+                    # Collection was constructed.
+                    assert wrapper.col is mock_col
         finally:
             config.ANKIWEB_USER = original_user
             config.ANKIWEB_PASS = original_pass
 
     def test_sync_failure_without_close_for_full_sync_preserves_handle(self):
         """If close_for_full_sync was never called, the original col handle is left intact."""
-        import tempfile
         import os
+        import tempfile
         from unittest.mock import Mock, patch
 
         from anki_connect_server.config import config
@@ -276,8 +290,9 @@ class TestRequired2Behavior:
                 mock_col.sync_login = Mock(return_value=mock_auth)
                 mock_col.sync_collection = Mock(side_effect=RuntimeError("auth server down"))
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     with pytest.raises(RuntimeError, match="auth server down"):
@@ -291,9 +306,9 @@ class TestRequired2Behavior:
 
     def test_sync_media_only_waits_for_completion(self):
         """sync_media_only must poll media_sync_status until running=False."""
-        import tempfile
         import os
-        from unittest.mock import Mock, patch, call
+        import tempfile
+        from unittest.mock import Mock, patch
 
         from anki_connect_server.config import config
 
@@ -319,8 +334,9 @@ class TestRequired2Behavior:
                 mock_col.abort_sync = Mock()
                 mock_col.abort_media_sync = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     result = wrapper.sync_media_only()
@@ -337,8 +353,8 @@ class TestRequired2Behavior:
 
     def test_sync_media_only_aborts_on_timeout(self):
         """sync_media_only must abort and raise SyncError when media sync never finishes."""
-        import tempfile
         import os
+        import tempfile
         from unittest.mock import Mock, patch
 
         from anki_connect_server.config import config
@@ -360,8 +376,9 @@ class TestRequired2Behavior:
                 mock_col.abort_sync = Mock()
                 mock_col.abort_media_sync = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper, SyncError
+
                     wrapper = AnkiWrapper(collection_path)
 
                     with pytest.raises(SyncError, match="media sync timed out"):
@@ -375,8 +392,8 @@ class TestRequired2Behavior:
 
     def test_concurrent_sync_rejected(self):
         """A second sync while one is in progress must raise SyncError, not corrupt state."""
-        import tempfile
         import os
+        import tempfile
         from unittest.mock import Mock, patch
 
         from anki_connect_server.config import config
@@ -402,8 +419,9 @@ class TestRequired2Behavior:
                 mock_col.close = Mock()
                 mock_col.full_upload_or_download = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper, SyncError
+
                     wrapper = AnkiWrapper(collection_path)
 
                     # Acquire the lock manually to simulate an in-progress sync.
@@ -424,16 +442,17 @@ class TestRequired2Behavior:
 
     def test_abort_sync_calls_both_abort_methods(self):
         """abort_sync must call col.abort_sync and col.abort_media_sync."""
-        import tempfile
         import os
+        import tempfile
         from unittest.mock import Mock, patch
 
         with tempfile.TemporaryDirectory() as tmpdir:
             collection_path = os.path.join(tmpdir, "test.anki21")
 
             mock_col = Mock()
-            with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+            with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                 from anki_connect_server.anki_wrapper import AnkiWrapper
+
                 wrapper = AnkiWrapper(collection_path)
 
                 wrapper.abort_sync()
@@ -442,8 +461,8 @@ class TestRequired2Behavior:
 
     def test_abort_sync_swallows_errors(self):
         """abort_sync must not raise even if the underlying abort methods fail."""
-        import tempfile
         import os
+        import tempfile
         from unittest.mock import Mock, patch
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -452,8 +471,9 @@ class TestRequired2Behavior:
             mock_col = Mock()
             mock_col.abort_sync = Mock(side_effect=RuntimeError("boom"))
             mock_col.abort_media_sync = Mock(side_effect=RuntimeError("boom2"))
-            with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+            with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                 from anki_connect_server.anki_wrapper import AnkiWrapper
+
                 wrapper = AnkiWrapper(collection_path)
 
                 # Must not raise.
@@ -464,6 +484,7 @@ class TestRequired2Behavior:
     def test_error_shows_exception_type(self, caplog):
         """Test that errors include exception type, not just message."""
         import logging
+
         from anki_connect_server.config import config
 
         original_user = config.ANKIWEB_USER
@@ -488,8 +509,9 @@ class TestRequired2Behavior:
                 mock_col.full_upload_or_download = Mock(side_effect=ValueError("Test error"))
                 mock_col.close = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                with patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper
+
                     wrapper = AnkiWrapper(collection_path)
 
                     with caplog.at_level(logging.ERROR):

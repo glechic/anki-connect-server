@@ -24,6 +24,7 @@ class TestCli:
         # api.run_server is imported lazily inside main(); patch the module
         # attribute on the source module so the lazy import sees the stub.
         import anki_connect_server.api as api_module
+
         monkeypatch.setattr(api_module, "run_server", fake_run_server)
         main(argv=["api"])
         assert called["n"] == 1
@@ -36,6 +37,7 @@ class TestCli:
             called["n"] += 1
 
         import anki_connect_server.mcp_server as mcp_module
+
         monkeypatch.setattr(mcp_module, "run", fake_run)
         main(argv=["mcp"])
         assert called["n"] == 1

@@ -1,6 +1,6 @@
-from functools import cache
 import logging
-from typing import Optional
+from functools import cache
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,10 +20,10 @@ class Config(BaseSettings):
 
     COLLECTION_PATH: str = ""
 
-    ANKIWEB_USER: Optional[str] = None
-    ANKIWEB_PASS: Optional[str] = None
+    ANKIWEB_USER: str | None = None
+    ANKIWEB_PASS: str | None = None
 
-    ANKIWEB_URL: Optional[str] = None
+    ANKIWEB_URL: str | None = None
 
     FULL_UPLOAD: bool = False
 

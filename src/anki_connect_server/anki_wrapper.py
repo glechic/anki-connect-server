@@ -1,15 +1,15 @@
-import os
+# ruff: noqa: I001
+# anki.collection must be imported before other anki.* submodules; importing
+# anki.cards first triggers a circular import (anki.hooks -> anki.hooks_gen ->
+# anki.cards.Card while anki.cards is still initialising).
 import base64
 import logging
 import threading
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from anki.collection import Collection
 from anki.cards import CardId
-from anki.decks import DeckId
 from anki.notes import Note, NoteId
-from anki.models import NotetypeDict
 
 from anki_connect_server.config import config
 
@@ -47,12 +47,14 @@ class AnkiWrapper:
 
     def sync_to_ankiweb(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
+        endpoint: str | None = None,
     ) -> str:
         if not self._sync_lock.acquire(blocking=False):
-            raise SyncError("Another sync is already in progress; abort it before starting a new one")
+            raise SyncError(
+                "Another sync is already in progress; abort it before starting a new one"
+            )
         try:
             return self._sync_to_ankiweb_locked(username, password, endpoint)
         finally:
@@ -60,9 +62,9 @@ class AnkiWrapper:
 
     def _sync_to_ankiweb_locked(
         self,
-        username: Optional[str],
-        password: Optional[str],
-        endpoint: Optional[str],
+        username: str | None,
+        password: str | None,
+        endpoint: str | None,
     ) -> str:
         user = username or config.ANKIWEB_USER
         pass_ = password or config.ANKIWEB_PASS
@@ -114,8 +116,10 @@ class AnkiWrapper:
             if closed_for_full_sync:
                 # The collection was closed for full sync; the underlying file may
                 # be in a partially-written state. Try to reopen, but if that
-                # fails too, mark the wrapper as unusable so callers don't
-                # serve corrupted data.
+                # fails too, leave self.col pointing at the closed handle --
+                # the original exception propagates and any subsequent
+                # operation will raise against the closed collection rather
+                # than serving corrupted data.
                 try:
                     self.col = Collection(self.collection_path)
                 except Exception as reopen_err:
@@ -123,7 +127,8 @@ class AnkiWrapper:
                         f"Failed to reopen collection after sync failure: "
                         f"{type(reopen_err).__name__}: {reopen_err}"
                     )
-                    self.col = None
+                    # Leave self.col as the (closed) handle; operations on it
+                    # will raise, signalling the unusable state.
             else:
                 # Collection was never closed for full sync; the handle is
                 # still valid (or the close itself failed). Leave it alone so
@@ -240,8 +245,9 @@ class AnkiWrapper:
 
     def _extract_fields_from_template(self, template: str) -> list[str]:
         import re
-        fields = re.findall(r'\{\{([^}]+)\}\}', template)
-        return [f for f in fields if not f.startswith('!')]
+
+        fields = re.findall(r"\{\{([^}]+)\}\}", template)
+        return [f for f in fields if not f.startswith("!")]
 
     def create_model(
         self,
@@ -252,12 +258,12 @@ class AnkiWrapper:
         is_cloze: bool = False,
     ) -> None:
         notetype = self.col.models.new(model_name)
-        for i, field_name in enumerate(in_order_fields):
+        for _i, field_name in enumerate(in_order_fields):
             field = self.col.models.new_field(field_name)
             self.col.models.add_field(notetype, field)
 
         for i, tmpl in enumerate(card_templates):
-            template = self.col.models.new_template(tmpl.get("Name", f"Card {i+1}"))
+            template = self.col.models.new_template(tmpl.get("Name", f"Card {i + 1}"))
             template["qfmt"] = tmpl.get("Front", "")
             template["afmt"] = tmpl.get("Back", "")
             self.col.models.add_template(notetype, template)
@@ -303,7 +309,7 @@ class AnkiWrapper:
             notetype["css"] = model["css"]
         self.col.models.update(notetype)
 
-    def add_note(self, note: dict) -> Optional[int]:
+    def add_note(self, note: dict) -> int | None:
         model_name = note.get("modelName", "")
         notetype = self._get_model_by_name(model_name)
         if not notetype:
@@ -317,7 +323,7 @@ class AnkiWrapper:
         self.col.add_note(new_note, deck_id)
         return new_note.id
 
-    def add_notes(self, notes: list[dict]) -> list[Optional[int]]:
+    def add_notes(self, notes: list[dict]) -> list[int | None]:
         results = []
         for note in notes:
             results.append(self.add_note(note))
@@ -354,20 +360,23 @@ class AnkiWrapper:
         for note_id in notes:
             try:
                 note = self.col.get_note(NoteId(note_id))
-            except Exception:
+            except Exception as e:
+                logger.debug("notes_info: skipping note %s: %s", note_id, e)
                 continue
             if not note:
                 continue
             model = self.col.models.get(note.mid)
-            result.append({
-                "noteId": note.id,
-                "modelName": model["name"] if model else "",
-                "tags": list(note.tags),
-                "fields": {
-                    name: {"value": value, "order": i}
-                    for i, (name, value) in enumerate(note.items())
-                },
-            })
+            result.append(
+                {
+                    "noteId": note.id,
+                    "modelName": model["name"] if model else "",
+                    "tags": list(note.tags),
+                    "fields": {
+                        name: {"value": value, "order": i}
+                        for i, (name, value) in enumerate(note.items())
+                    },
+                }
+            )
         return result
 
     def delete_notes(self, notes: list[int]) -> None:
@@ -389,26 +398,29 @@ class AnkiWrapper:
         for card_id in cards:
             try:
                 card = self.col.get_card(CardId(card_id))
-            except Exception:
+            except Exception as e:
+                logger.debug("cards_info: skipping card %s: %s", card_id, e)
                 continue
             if not card:
                 continue
             note = card.note()
             model = self.col.models.get(note.mid)
-            result.append({
-                "cardId": card.id,
-                "note": note.id,
-                "deckName": self.col.decks.name(card.did),
-                "modelName": model["name"] if model else "",
-                "fields": {
-                    name: {"value": value, "order": i}
-                    for i, (name, value) in enumerate(note.items())
-                },
-                "interval": card.ivl,
-                "ease": card.factor,
-                "question": card.q(reload=True),
-                "answer": card.a(),
-            })
+            result.append(
+                {
+                    "cardId": card.id,
+                    "note": note.id,
+                    "deckName": self.col.decks.name(card.did),
+                    "modelName": model["name"] if model else "",
+                    "fields": {
+                        name: {"value": value, "order": i}
+                        for i, (name, value) in enumerate(note.items())
+                    },
+                    "interval": card.ivl,
+                    "ease": card.factor,
+                    "question": card.q(reload=True),
+                    "answer": card.a(),
+                }
+            )
         return result
 
     def suspend(self, cards: list[int]) -> bool:
@@ -466,21 +478,23 @@ class AnkiWrapper:
                 continue
             if complete:
                 last_interval = self._last_interval_from_revlog(card_id)
-                result.append({
-                    "interval": card.ivl,
-                    # last_interval is the previous interval in days, sourced
-                    # from the most recent review log entry. Falls back to the
-                    # current interval when there is no review history (e.g.
-                    # a brand-new card).
-                    "last_interval": last_interval if last_interval is not None else card.ivl,
-                    "is_learning": card.queue in (1, 3),
-                    "is_mature": card.ivl >= 21,
-                })
+                result.append(
+                    {
+                        "interval": card.ivl,
+                        # last_interval is the previous interval in days, sourced
+                        # from the most recent review log entry. Falls back to the
+                        # current interval when there is no review history (e.g.
+                        # a brand-new card).
+                        "last_interval": last_interval if last_interval is not None else card.ivl,
+                        "is_learning": card.queue in (1, 3),
+                        "is_mature": card.ivl >= 21,
+                    }
+                )
             else:
                 result.append(card.ivl)
         return result
 
-    def _last_interval_from_revlog(self, card_id: int) -> Optional[int]:
+    def _last_interval_from_revlog(self, card_id: int) -> int | None:
         """Return the previous interval (days) from the review log, or None
         if there is no review history.
 
@@ -509,7 +523,7 @@ class AnkiWrapper:
         file_data = base64.b64decode(data)
         self.col.media.write_data(filename, file_data)
 
-    def retrieve_media_file(self, filename: str) -> Optional[str]:
+    def retrieve_media_file(self, filename: str) -> str | None:
         try:
             data = self.col.media.read_data(filename)
             return base64.b64encode(data).decode()
@@ -528,9 +542,9 @@ class AnkiWrapper:
 
     def sync_status(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
+        endpoint: str | None = None,
     ) -> dict:
         user = username or config.ANKIWEB_USER
         pass_ = password or config.ANKIWEB_PASS
@@ -559,6 +573,7 @@ class AnkiWrapper:
         media_sync_status() until it reports not running.
         """
         import time
+
         deadline = time.monotonic() + timeout
         last = None
         while True:
@@ -584,9 +599,9 @@ class AnkiWrapper:
 
     def sync_media_only(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
+        endpoint: str | None = None,
         timeout: float = 300.0,
         poll_interval: float = 0.5,
     ) -> str:
@@ -598,7 +613,9 @@ class AnkiWrapper:
             raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for media sync")
 
         if not self._sync_lock.acquire(blocking=False):
-            raise SyncError("Another sync is already in progress; abort it before starting a new one")
+            raise SyncError(
+                "Another sync is already in progress; abort it before starting a new one"
+            )
         try:
             auth = self.col.sync_login(
                 username=user,
@@ -614,9 +631,9 @@ class AnkiWrapper:
 
     def get_sync_auth(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
+        endpoint: str | None = None,
     ) -> Any:
         user = username or config.ANKIWEB_USER
         pass_ = password or config.ANKIWEB_PASS

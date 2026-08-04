@@ -15,6 +15,7 @@ def anki_wrapper():
         os.makedirs(media_path, exist_ok=True)
 
         from anki_connect_server.anki_wrapper import AnkiWrapper
+
         wrapper = AnkiWrapper(collection_path)
 
         yield wrapper

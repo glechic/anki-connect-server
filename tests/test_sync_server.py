@@ -1,11 +1,11 @@
 """Tests for sync server functionality."""
 
+import multiprocessing
 import os
 import tempfile
-import multiprocessing
 import time
-import pytest
 
+import pytest
 
 SYNC_USER = "testuser"
 SYNC_PASS = "testpass"
@@ -19,19 +19,19 @@ def run_sync_server(host: str, port: int, user: str, password: str):  # pragma: 
     os.environ["SYNC_PORT"] = str(port)
     os.environ["SYNC_USER1"] = f"{user}:{password}"
     import signal
+
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     from anki._backend import RustBackend
+
     RustBackend.syncserver()
 
 
-@pytest.fixture(autouse=True, scope='module')
+@pytest.fixture(autouse=True, scope="module")
 def sync_server():
     """Provide a running sync server."""
     process = multiprocessing.Process(
-        target=run_sync_server,
-        args=(SYNC_HOST, SYNC_PORT, SYNC_USER, SYNC_PASS),
-        daemon=True
+        target=run_sync_server, args=(SYNC_HOST, SYNC_PORT, SYNC_USER, SYNC_PASS), daemon=True
     )
     process.start()
     time.sleep(2)
@@ -56,6 +56,7 @@ def sync_anki_wrapper(sync_server):
         collection_path = os.path.join(tmpdir, "test.anki21")
 
         from anki_connect_server.anki_wrapper import AnkiWrapper
+
         wrapper = AnkiWrapper(collection_path)
 
         yield wrapper, sync_server
@@ -78,11 +79,14 @@ class TestSyncServer:
         from anki_connect_server.handlers import handle_sync_status
 
         wrapper, endpoint = sync_anki_wrapper
-        result = await handle_sync_status(wrapper, {
-            "endpoint": endpoint,
-            "username": SYNC_USER,
-            "password": SYNC_PASS,
-        })
+        result = await handle_sync_status(
+            wrapper,
+            {
+                "endpoint": endpoint,
+                "username": SYNC_USER,
+                "password": SYNC_PASS,
+            },
+        )
         assert isinstance(result, dict)
         assert "server" in result or "status" in result
 
@@ -97,11 +101,14 @@ class TestSyncServer:
         from anki_connect_server.handlers import handle_sync
 
         wrapper, endpoint = sync_anki_wrapper
-        result = await handle_sync(wrapper, {
-            "endpoint": endpoint,
-            "username": SYNC_USER,
-            "password": SYNC_PASS,
-        })
+        result = await handle_sync(
+            wrapper,
+            {
+                "endpoint": endpoint,
+                "username": SYNC_USER,
+                "password": SYNC_PASS,
+            },
+        )
         assert isinstance(result, str)
         assert "sync completed" in result.lower()
 
@@ -119,19 +126,22 @@ class TestSyncServer:
         from anki_connect_server.handlers import handle_sync_media
 
         wrapper, endpoint = sync_anki_wrapper
-        result = await handle_sync_media(wrapper, {
-            "endpoint": endpoint,
-            "username": SYNC_USER,
-            "password": SYNC_PASS,
-        })
+        result = await handle_sync_media(
+            wrapper,
+            {
+                "endpoint": endpoint,
+                "username": SYNC_USER,
+                "password": SYNC_PASS,
+            },
+        )
         assert isinstance(result, str)
         assert "media" in result.lower()
 
     @pytest.mark.asyncio
     async def test_sync_media_only_with_missing_credentials(self, anki_wrapper):
         """Test sync_media_only raises error when credentials are missing."""
-        from anki_connect_server.handlers import handle_sync_media
         from anki_connect_server.config import config
+        from anki_connect_server.handlers import handle_sync_media
 
         original_user = config.ANKIWEB_USER
         original_pass = config.ANKIWEB_PASS
@@ -148,8 +158,8 @@ class TestSyncServer:
     @pytest.mark.asyncio
     async def test_sync_media_only_partial_params(self, sync_anki_wrapper):
         """Test sync_media_only works with only username in params (password from config)."""
-        from anki_connect_server.handlers import handle_sync_media
         from anki_connect_server.config import config
+        from anki_connect_server.handlers import handle_sync_media
 
         original_user = config.ANKIWEB_USER
         original_pass = config.ANKIWEB_PASS

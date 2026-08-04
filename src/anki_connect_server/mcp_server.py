@@ -1,12 +1,9 @@
-from typing import Optional
-
 from fastmcp import FastMCP
 
-from anki_connect_server.config import get_config
 from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.config import get_config
 
-
-_anki_wrapper: Optional[AnkiWrapper] = None
+_anki_wrapper: AnkiWrapper | None = None
 
 
 def get_anki_wrapper() -> AnkiWrapper:
@@ -70,7 +67,9 @@ def get_model_field_names(model_name: str) -> list[str]:
 
 
 @mcp.tool
-def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] = []) -> int | None:
+def add_note(
+    deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] | None = None
+) -> int | None:
     """Add a new note to the collection."""
     note = {
         "deckName": deck_name,

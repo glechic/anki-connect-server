@@ -1,12 +1,13 @@
 """CLI entry point for anki-connect-server."""
-import sys
+
 import argparse
+import sys
 
 
 def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(
         prog="anki-connect-server",
-        description="Headless AnkiConnect-compatible REST API server with MCP support"
+        description="Headless AnkiConnect-compatible REST API server with MCP support",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
@@ -20,9 +21,11 @@ def main(argv: list[str] | None = None):
 
     if args.command == "api":
         from anki_connect_server.api import run_server
+
         run_server()
     elif args.command == "mcp":
         from anki_connect_server.mcp_server import run
+
         run()
     else:
         parser.print_help()

@@ -1,7 +1,7 @@
 import asyncio
 import logging
+from typing import Any
 
-from typing import Any, Optional
 from anki_connect_server.anki_wrapper import AnkiWrapper
 
 logger = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ async def handle_update_model_styling(wrapper: AnkiWrapper, params: dict) -> Non
     wrapper.update_model_styling(model)
 
 
-async def handle_add_note(wrapper: AnkiWrapper, params: dict) -> Optional[int]:
+async def handle_add_note(wrapper: AnkiWrapper, params: dict) -> int | None:
     require_params(params, "note")
     note = params.get("note", {})
     if not isinstance(note, dict):
@@ -160,7 +160,7 @@ async def handle_add_note(wrapper: AnkiWrapper, params: dict) -> Optional[int]:
     return wrapper.add_note(note)
 
 
-async def handle_add_notes(wrapper: AnkiWrapper, params: dict) -> list[Optional[int]]:
+async def handle_add_notes(wrapper: AnkiWrapper, params: dict) -> list[int | None]:
     require_params(params, "notes")
     notes = params.get("notes", [])
     if not isinstance(notes, list):
@@ -268,7 +268,7 @@ async def handle_store_media_file(wrapper: AnkiWrapper, params: dict) -> None:
     wrapper.store_media_file(filename, data)
 
 
-async def handle_retrieve_media_file(wrapper: AnkiWrapper, params: dict) -> Optional[str]:
+async def handle_retrieve_media_file(wrapper: AnkiWrapper, params: dict) -> str | None:
     filename = params.get("filename", "")
     return wrapper.retrieve_media_file(filename)
 
@@ -297,7 +297,9 @@ async def handle_multi(wrapper: AnkiWrapper, params: dict) -> list[Any]:
     results: list[Any] = []
     for action in actions:
         if not isinstance(action, dict):
-            results.append({"error": f"Invalid action: expected object, got {type(action).__name__}"})
+            results.append(
+                {"error": f"Invalid action: expected object, got {type(action).__name__}"}
+            )
             continue
         action_name = action.get("action", "")
         action_params = action.get("params", {})
@@ -377,4 +379,4 @@ async def dispatch(action: str, params: dict, wrapper: AnkiWrapper) -> Any:
         return await handler(wrapper, params)
     except ValidationError as e:
         logger.warning(f"Validation error in {action}: {e}")
-        raise ValueError(str(e))
+        raise ValueError(str(e)) from e

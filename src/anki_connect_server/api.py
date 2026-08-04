@@ -1,15 +1,15 @@
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-from anki_connect_server.config import Config, get_config
 from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.config import Config, get_config
 from anki_connect_server.handlers import dispatch
 
 
-def create_anki_wrapper(config: Optional[Config] = None) -> AnkiWrapper:
+def create_anki_wrapper(config: Config | None = None) -> AnkiWrapper:
     settings = config or get_config()
     return AnkiWrapper(settings.COLLECTION_PATH)
 
@@ -39,7 +39,7 @@ class AnkiConnectRequest(BaseModel):
 
 class AnkiConnectResponse(BaseModel):
     result: Any
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def get_request_wrapper(request: Request) -> AnkiWrapper:
@@ -67,6 +67,7 @@ async def handle_request(req: AnkiConnectRequest, request: Request):
 def run_server():
     """Run the FastAPI server."""
     import uvicorn
+
     settings = get_config()
     uvicorn.run(app, host=settings.BIND, port=settings.PORT)
 
