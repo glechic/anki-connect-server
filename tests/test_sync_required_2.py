@@ -207,6 +207,90 @@ class TestRequired2Behavior:
             config.ANKIWEB_USER = original_user
             config.ANKIWEB_PASS = original_pass
 
+    def test_sync_media_only_waits_for_completion(self):
+        """sync_media_only must poll media_sync_status until running=False."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch, call
+
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = "test"
+        config.ANKIWEB_PASS = "test"
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                collection_path = os.path.join(tmpdir, "test.anki21")
+
+                mock_col = Mock()
+                mock_auth = Mock(hkey="test_key")
+
+                # First poll: still running. Second poll: done.
+                status_running = Mock(running=True)
+                status_done = Mock(running=False)
+                mock_col.media_sync_status = Mock(side_effect=[status_running, status_done])
+
+                mock_col.sync_login = Mock(return_value=mock_auth)
+                mock_col.sync_media = Mock()
+                mock_col.abort_sync = Mock()
+                mock_col.abort_media_sync = Mock()
+
+                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                    from anki_connect_server.anki_wrapper import AnkiWrapper
+                    wrapper = AnkiWrapper(collection_path)
+
+                    result = wrapper.sync_media_only()
+                    assert result == "media sync completed"
+
+                    mock_col.sync_media.assert_called_once_with(mock_auth)
+                    # Polled until running=False
+                    assert mock_col.media_sync_status.call_count == 2
+                    # Did not abort since it finished in time
+                    mock_col.abort_sync.assert_not_called()
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
+    def test_sync_media_only_aborts_on_timeout(self):
+        """sync_media_only must abort and raise SyncError when media sync never finishes."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch
+
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = "test"
+        config.ANKIWEB_PASS = "test"
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                collection_path = os.path.join(tmpdir, "test.anki21")
+
+                mock_col = Mock()
+                mock_auth = Mock(hkey="test_key")
+                mock_col.sync_login = Mock(return_value=mock_auth)
+                mock_col.sync_media = Mock()
+                mock_col.media_sync_status = Mock(return_value=Mock(running=True))
+                mock_col.abort_sync = Mock()
+                mock_col.abort_media_sync = Mock()
+
+                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                    from anki_connect_server.anki_wrapper import AnkiWrapper, SyncError
+                    wrapper = AnkiWrapper(collection_path)
+
+                    with pytest.raises(SyncError, match="media sync timed out"):
+                        wrapper.sync_media_only(timeout=0.05, poll_interval=0.01)
+
+                    mock_col.abort_sync.assert_called_once()
+                    mock_col.abort_media_sync.assert_called_once()
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
     def test_concurrent_sync_rejected(self):
         """A second sync while one is in progress must raise SyncError, not corrupt state."""
         import tempfile

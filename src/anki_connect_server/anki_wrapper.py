@@ -484,11 +484,44 @@ class AnkiWrapper:
             "required": getattr(status, "required", 0),
         }
 
+    def _wait_for_media(self, timeout: float = 300.0, poll_interval: float = 0.5) -> None:
+        """Wait for the background media sync to finish.
+
+        Anki's sync_media() returns immediately after starting the sync;
+        without waiting we falsely report completion. Poll
+        media_sync_status() until it reports not running.
+        """
+        import time
+        deadline = time.monotonic() + timeout
+        last = None
+        while True:
+            try:
+                status = self.col.media_sync_status()
+            except Exception as e:
+                logger.warning(f"media_sync_status poll failed: {type(e).__name__}: {e}")
+                return
+            running = getattr(status, "running", None)
+            if running is False:
+                return
+            if running is None:
+                # Older/mocked response without attribute; assume done.
+                return
+            last = status
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    f"media sync did not finish within {timeout}s; aborting wait (last status={last})"
+                )
+                self.abort_sync()
+                raise SyncError(f"media sync timed out after {timeout}s")
+            time.sleep(poll_interval)
+
     def sync_media_only(
         self,
         username: Optional[str] = None,
         password: Optional[str] = None,
         endpoint: Optional[str] = None,
+        timeout: float = 300.0,
+        poll_interval: float = 0.5,
     ) -> str:
         user = username or config.ANKIWEB_USER
         pass_ = password or config.ANKIWEB_PASS
@@ -497,14 +530,20 @@ class AnkiWrapper:
         if not user or not pass_:
             raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for media sync")
 
-        auth = self.col.sync_login(
-            username=user,
-            password=pass_,
-            endpoint=url,
-        )
-        self.col.sync_media(auth)
-        logger.info("Media sync completed")
-        return "media sync completed"
+        if not self._sync_lock.acquire(blocking=False):
+            raise SyncError("Another sync is already in progress; abort it before starting a new one")
+        try:
+            auth = self.col.sync_login(
+                username=user,
+                password=pass_,
+                endpoint=url,
+            )
+            self.col.sync_media(auth)
+            self._wait_for_media(timeout=timeout, poll_interval=poll_interval)
+            logger.info("Media sync completed")
+            return "media sync completed"
+        finally:
+            self._sync_lock.release()
 
     def get_sync_auth(
         self,
