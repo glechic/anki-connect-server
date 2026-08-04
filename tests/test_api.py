@@ -284,6 +284,40 @@ async def test_unknown_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_server_error_returns_500(app_with_wrapper, monkeypatch):
+    """Unexpected (non-ValueError) exceptions must surface as HTTP 500, not be
+    swallowed into a 200 with an error field. A corrupted-collection crash is
+    a server fault, not a client error."""
+    from anki_connect_server import handlers
+
+    async def boom(wrapper, params):
+        raise RuntimeError("collection is corrupted")
+
+    monkeypatch.setitem(handlers.ACTION_HANDLERS, "boom", boom)
+    # raise_server_exceptions=False lets the app's exception handler turn the
+    # RuntimeError into a 500 response instead of the test transport re-raising.
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post("/", json={"action": "boom", "version": 6})
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_validation_error_returns_200_with_error(app_with_wrapper):
+    """Client errors (ValueError subclass) are reported in-body with HTTP 200
+    per the AnkiConnect convention so existing clients keep working."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # findNotes requires a 'query' param; missing it raises ValidationError.
+        response = await client.post("/", json={"action": "findNotes", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["error"] is not None
+        assert "query" in data["error"]
+
+
+@pytest.mark.asyncio
 async def test_invalid_json(app_with_wrapper):
     """Test invalid JSON request."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

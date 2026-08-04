@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
@@ -61,8 +62,26 @@ async def handle_request(req: AnkiConnectRequest, request: Request):
     try:
         result = await dispatch(req.action, req.params, wrapper)
         return {"result": result, "error": None}
-    except Exception as e:
+    except ValueError as e:
+        # Client-facing errors (unknown action, missing/invalid params) are
+        # reported in the response body per the AnkiConnect convention with
+        # HTTP 200 so existing clients keep working.
         return {"result": None, "error": str(e)}
+    # Any other exception (corrupted collection, Anki backend crash, etc.) is
+    # a server error and propagates as HTTP 500 via the handler below.
+
+
+@app.exception_handler(Exception)
+async def server_error_handler(request: Request, exc: Exception):
+    """Surface unexpected (non-ValueError) exceptions as HTTP 500 instead of
+    swallowing them into a 200 with an error field. A corrupted-collection crash
+    is a server fault, not a client error, and should not be reported with 200."""
+    import logging
+
+    logging.getLogger("anki_connect_server.api").exception(
+        "Unhandled exception processing %s %s", request.method, request.url.path
+    )
+    return JSONResponse(status_code=500, content={"result": None, "error": str(exc)})
 
 
 def run_server():
