@@ -290,16 +290,26 @@ async def handle_export_package(wrapper: AnkiWrapper, params: dict) -> None:
 
 async def handle_multi(wrapper: AnkiWrapper, params: dict) -> list[Any]:
     actions = params.get("actions", [])
-    results = []
+    if not isinstance(actions, list):
+        raise ValidationError("actions must be a list")
+    results: list[Any] = []
     for action in actions:
+        if not isinstance(action, dict):
+            results.append({"error": f"Invalid action: expected object, got {type(action).__name__}"})
+            continue
         action_name = action.get("action", "")
         action_params = action.get("params", {})
         handler = ACTION_HANDLERS.get(action_name)
-        if handler:
+        if not handler:
+            results.append({"error": f"Unknown action: {action_name}"})
+            continue
+        try:
             result = await handler(wrapper, action_params)
             results.append(result)
-        else:
-            results.append({"error": f"Unknown action: {action_name}"})
+        except Exception as e:
+            # Per-action failure does not abort the whole multi call.
+            # AnkiConnect returns an error string per action.
+            results.append({"error": str(e)})
     return results
 
 

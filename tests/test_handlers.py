@@ -436,6 +436,55 @@ class TestMultiHandler:
         })
         assert len(result) == 2
 
+    @pytest.mark.asyncio
+    async def test_handle_multi_unknown_action_per_action(self, anki_wrapper):
+        """Unknown actions inside multi must be reported per-action, not abort the batch."""
+        from anki_connect_server.handlers import handle_multi
+        result = await handle_multi(anki_wrapper, {
+            "actions": [
+                {"action": "deckNames", "params": {}},
+                {"action": "noSuchAction", "params": {}},
+            ]
+        })
+        assert len(result) == 2
+        assert isinstance(result[0], list)  # deckNames succeeded
+        assert result[1] == {"error": "Unknown action: noSuchAction"}
+
+    @pytest.mark.asyncio
+    async def test_handle_multi_sub_action_failure_does_not_abort(self, anki_wrapper):
+        """A failing sub-action must not abort the whole multi call."""
+        from anki_connect_server.handlers import handle_multi
+        result = await handle_multi(anki_wrapper, {
+            "actions": [
+                {"action": "createDeck", "params": {"deck": ""}},  # raises ValidationError
+                {"action": "deckNames", "params": {}},  # should still run
+            ]
+        })
+        assert len(result) == 2
+        assert isinstance(result[0], dict) and "error" in result[0]
+        assert isinstance(result[1], list)
+
+    @pytest.mark.asyncio
+    async def test_handle_multi_invalid_action_entry(self, anki_wrapper):
+        """Non-dict action entries are reported per-action without crashing."""
+        from anki_connect_server.handlers import handle_multi
+        result = await handle_multi(anki_wrapper, {
+            "actions": [
+                "not a dict",
+                {"action": "deckNames", "params": {}},
+            ]
+        })
+        assert len(result) == 2
+        assert "error" in result[0]
+        assert isinstance(result[1], list)
+
+    @pytest.mark.asyncio
+    async def test_handle_multi_actions_not_list_raises(self, anki_wrapper):
+        """actions must be a list; otherwise raise ValidationError."""
+        from anki_connect_server.handlers import handle_multi, ValidationError
+        with pytest.raises(ValidationError, match="actions must be a list"):
+            await handle_multi(anki_wrapper, {"actions": "not a list"})
+
 
 class TestValidationErrors:
     """Test validation error handling."""
