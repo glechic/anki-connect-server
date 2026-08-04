@@ -463,15 +463,42 @@ class AnkiWrapper:
                 result.append(None)
                 continue
             if complete:
+                last_interval = self._last_interval_from_revlog(card_id)
                 result.append({
                     "interval": card.ivl,
-                    "last_interval": getattr(card, 'lapses', 0),
+                    # last_interval is the previous interval in days, sourced
+                    # from the most recent review log entry. Falls back to the
+                    # current interval when there is no review history (e.g.
+                    # a brand-new card).
+                    "last_interval": last_interval if last_interval is not None else card.ivl,
                     "is_learning": card.queue in (1, 3),
                     "is_mature": card.ivl >= 21,
                 })
             else:
                 result.append(card.ivl)
         return result
+
+    def _last_interval_from_revlog(self, card_id: int) -> Optional[int]:
+        """Return the previous interval (days) from the review log, or None
+        if there is no review history.
+
+        Anki's revlog entries record the interval *resulting* from each
+        review. The 'previous interval' is therefore the interval of the
+        second-to-most-recent entry (the most recent entry's interval is
+        the current interval). For a single review, there is no previous
+        interval and we return 0 (matching the AnkiConnect convention).
+        """
+        try:
+            stats = self.col.card_stats_data(CardId(card_id))
+        except Exception:
+            return None
+        entries = list(stats.revlog)
+        if not entries:
+            return None
+        if len(entries) == 1:
+            return 0
+        previous = entries[-2]
+        return int(previous.interval)
 
     def get_media_dir_path(self) -> str:
         return self.col.media.dir()
