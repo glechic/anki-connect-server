@@ -1,20 +1,26 @@
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-from anki_connect_server.config import config
+from anki_connect_server.config import Config, get_config
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.handlers import dispatch
-from anki_connect_server import wrapper
+
+
+def create_anki_wrapper(config: Optional[Config] = None) -> AnkiWrapper:
+    settings = config or get_config()
+    return AnkiWrapper(settings.COLLECTION_PATH)
 
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    wrapper.set_wrapper(AnkiWrapper(config.COLLECTION_PATH))
+    app.state.anki_wrapper = create_anki_wrapper()
     yield
-    wrapper.close_wrapper()
+    if app.state.anki_wrapper:
+        app.state.anki_wrapper.close()
+        app.state.anki_wrapper = None
 
 
 app = FastAPI(
@@ -36,18 +42,23 @@ class AnkiConnectResponse(BaseModel):
     error: Optional[str] = None
 
 
+def get_request_wrapper(request: Request) -> AnkiWrapper:
+    wrapper = getattr(request.app.state, "anki_wrapper", None)
+    if wrapper is None:
+        raise RuntimeError("Server not initialized")
+    return wrapper
+
+
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
 
 
 @app.post("/api", response_model=AnkiConnectResponse)
-async def handle_request(req: AnkiConnectRequest):
-    if not wrapper.get_anki_wrapper():
-        return {"result": None, "error": "Server not initialized"}
-
+async def handle_request(req: AnkiConnectRequest, request: Request):
+    wrapper = get_request_wrapper(request)
     try:
-        result = await dispatch(req.action, req.params, wrapper.get_anki_wrapper())
+        result = await dispatch(req.action, req.params, wrapper)
         return {"result": result, "error": None}
     except Exception as e:
         return {"result": None, "error": str(e)}
@@ -56,7 +67,8 @@ async def handle_request(req: AnkiConnectRequest):
 def run_server():
     """Run the FastAPI server."""
     import uvicorn
-    uvicorn.run(app, host=config.BIND, port=config.PORT)
+    settings = get_config()
+    uvicorn.run(app, host=settings.BIND, port=settings.PORT)
 
 
 if __name__ == "__main__":

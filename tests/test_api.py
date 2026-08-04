@@ -4,17 +4,15 @@ import pytest
 from unittest.mock import patch
 from httpx import AsyncClient, ASGITransport
 
-from anki_connect_server import app
+from anki_connect_server.api import app
 
 
 @pytest.fixture
 def app_with_wrapper(anki_wrapper):
-    """Patch the wrapper module to use the real anki_wrapper."""
-    from anki_connect_server import wrapper
-    original_wrapper = wrapper.wrapper
-    wrapper.set_wrapper(anki_wrapper)
+    """Attach a real AnkiWrapper to app.state for the duration of the test."""
+    app.state.anki_wrapper = anki_wrapper
     yield anki_wrapper
-    wrapper.set_wrapper(original_wrapper)
+    app.state.anki_wrapper = None
 
 
 @pytest.mark.asyncio

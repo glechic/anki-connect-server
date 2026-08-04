@@ -1,3 +1,4 @@
+from functools import cache
 from typing import Optional
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,11 @@ class Config(BaseSettings):
     ANKIWEB_URL: Optional[str] = None
 
     FULL_UPLOAD: bool = False
+
+
+@cache
+def get_config() -> Config:
+    return Config()
 
 
 config = Config().model_validate({})
