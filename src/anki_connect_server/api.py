@@ -54,6 +54,7 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.post("/", response_model=AnkiConnectResponse)
 @app.post("/api", response_model=AnkiConnectResponse)
 async def handle_request(req: AnkiConnectRequest, request: Request):
     wrapper = get_request_wrapper(request)
