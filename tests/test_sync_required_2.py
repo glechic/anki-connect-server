@@ -207,6 +207,88 @@ class TestRequired2Behavior:
             config.ANKIWEB_USER = original_user
             config.ANKIWEB_PASS = original_pass
 
+    def test_sync_failure_after_close_for_full_sync_keeps_wrapper_consistent(self):
+        """If reopen after sync failure also fails, self.col is set to None (not corrupted)."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch
+
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = "test"
+        config.ANKIWEB_PASS = "test"
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                collection_path = os.path.join(tmpdir, "test.anki21")
+
+                mock_col = Mock()
+                mock_auth = Mock(hkey="test_key")
+                mock_result = Mock()
+                mock_result.required = 3
+                mock_result.host_number = 7
+                mock_result.server_media_usn = 0
+
+                mock_col.sync_login = Mock(return_value=mock_auth)
+                mock_col.sync_collection = Mock(return_value=mock_result)
+                mock_col.close_for_full_sync = Mock()
+                # The download itself fails.
+                mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
+                mock_col.close = Mock()
+
+                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col) as col_factory:
+                    from anki_connect_server.anki_wrapper import AnkiWrapper
+                    wrapper = AnkiWrapper(collection_path)
+
+                    # Patch Collection so the reopen also fails.
+                    col_factory.side_effect = RuntimeError("disk on fire")
+                    with pytest.raises(RuntimeError, match="network died"):
+                        wrapper.sync_to_ankiweb()
+
+                    # self.col must be None, not a dangling closed handle.
+                    assert wrapper.col is None
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
+    def test_sync_failure_without_close_for_full_sync_preserves_handle(self):
+        """If close_for_full_sync was never called, the original col handle is left intact."""
+        import tempfile
+        import os
+        from unittest.mock import Mock, patch
+
+        from anki_connect_server.config import config
+
+        original_user = config.ANKIWEB_USER
+        original_pass = config.ANKIWEB_PASS
+        config.ANKIWEB_USER = "test"
+        config.ANKIWEB_PASS = "test"
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                collection_path = os.path.join(tmpdir, "test.anki21")
+
+                mock_col = Mock()
+                mock_auth = Mock(hkey="test_key")
+                # sync_collection itself raises (network issue before any close).
+                mock_col.sync_login = Mock(return_value=mock_auth)
+                mock_col.sync_collection = Mock(side_effect=RuntimeError("auth server down"))
+
+                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
+                    from anki_connect_server.anki_wrapper import AnkiWrapper
+                    wrapper = AnkiWrapper(collection_path)
+
+                    with pytest.raises(RuntimeError, match="auth server down"):
+                        wrapper.sync_to_ankiweb()
+
+                    # Handle untouched; close_for_full_sync not called.
+                    assert wrapper.col is mock_col
+        finally:
+            config.ANKIWEB_USER = original_user
+            config.ANKIWEB_PASS = original_pass
+
     def test_sync_media_only_waits_for_completion(self):
         """sync_media_only must poll media_sync_status until running=False."""
         import tempfile
@@ -396,11 +478,15 @@ class TestRequired2Behavior:
                 mock_col = Mock()
                 mock_auth = Mock(hkey="test_key")
                 mock_result = Mock()
-                mock_result.required = 0
+                mock_result.required = 3
+                mock_result.host_number = 7
+                mock_result.server_media_usn = 0
 
                 mock_col.sync_login = Mock(return_value=mock_auth)
                 mock_col.sync_collection = Mock(return_value=mock_result)
-                mock_col.close = Mock(side_effect=ValueError("Test error"))
+                mock_col.close_for_full_sync = Mock()
+                mock_col.full_upload_or_download = Mock(side_effect=ValueError("Test error"))
+                mock_col.close = Mock()
 
                 with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
                     from anki_connect_server.anki_wrapper import AnkiWrapper

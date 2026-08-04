@@ -79,41 +79,68 @@ class AnkiWrapper:
 
         result = self.col.sync_collection(auth, sync_media=False)
 
+        closed_for_full_sync = False
         try:
             if result.required == 3:
                 self.col.close_for_full_sync()
+                closed_for_full_sync = True
                 self.col.full_upload_or_download(
                     auth=auth, server_usn=result.server_media_usn, upload=False
                 )
-                self.col = Collection(self.collection_path)
+                self._reopen_collection_safely()
             elif result.required == 4:
                 if config.FULL_UPLOAD:
                     self.col.close_for_full_sync()
+                    closed_for_full_sync = True
                     self.col.full_upload_or_download(
                         auth=auth, server_usn=result.server_media_usn, upload=True
                     )
-                    self.col = Collection(self.collection_path)
+                    self._reopen_collection_safely()
                 else:
                     logger.warning("Full upload required but FULL_UPLOAD=false, skipping")
-                    self.col.close()
-                    self.col = Collection(self.collection_path)
+                    self._reopen_collection_safely()
             elif result.required == 2:
                 logger.info("FULL_SYNC required, downloading from AnkiWeb to resolve conflict")
                 self.col.close_for_full_sync()
+                closed_for_full_sync = True
                 self.col.full_upload_or_download(
                     auth=auth, server_usn=result.server_media_usn, upload=False
                 )
-                self.col = Collection(self.collection_path)
+                self._reopen_collection_safely()
             else:
-                self.col.close()
-                self.col = Collection(self.collection_path)
+                self._reopen_collection_safely()
         except Exception as e:
             logger.error(f"Sync failed: {type(e).__name__}: {e}")
-            self.col = Collection(self.collection_path)
+            if closed_for_full_sync:
+                # The collection was closed for full sync; the underlying file may
+                # be in a partially-written state. Try to reopen, but if that
+                # fails too, mark the wrapper as unusable so callers don't
+                # serve corrupted data.
+                try:
+                    self.col = Collection(self.collection_path)
+                except Exception as reopen_err:
+                    logger.error(
+                        f"Failed to reopen collection after sync failure: "
+                        f"{type(reopen_err).__name__}: {reopen_err}"
+                    )
+                    self.col = None
+            else:
+                # Collection was never closed for full sync; the handle is
+                # still valid (or the close itself failed). Leave it alone so
+                # the caller can retry without us clobbering the handle.
+                pass
             raise
 
         logger.info(f"Sync completed: host={result.host_number}, required={result.required}")
         return f"sync completed: host={result.host_number}, required={result.required}"
+
+    def _reopen_collection_safely(self) -> None:
+        """Close (if still open) and reopen the collection, tolerating errors."""
+        try:
+            self.col.close()
+        except Exception as e:
+            logger.warning(f"Ignoring close error during reopen: {type(e).__name__}: {e}")
+        self.col = Collection(self.collection_path)
 
     def deck_names(self) -> list[str]:
         decks = self.col.decks.all_names_and_ids()
