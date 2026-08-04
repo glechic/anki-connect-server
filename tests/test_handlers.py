@@ -658,6 +658,27 @@ class TestValidationErrors:
             await handle_update_note_fields(anki_wrapper, {"note": 123})
 
     @pytest.mark.asyncio
+    async def test_update_note_fields_missing_id_raises(self, anki_wrapper):
+        """updateNoteFields with a note dict that has no 'id' must raise, not
+        silently succeed (the old code returned None and the client got 200 OK
+        for an operation that did nothing)."""
+        from anki_connect_server.handlers import handle_update_note_fields
+
+        with pytest.raises(ValueError, match="requires an 'id' field"):
+            await handle_update_note_fields(anki_wrapper, {"note": {"fields": {"Front": "x"}}})
+
+    @pytest.mark.asyncio
+    async def test_update_note_fields_nonexistent_id_raises(self, anki_wrapper):
+        """updateNoteFields with an id that does not exist must raise, not
+        silently succeed."""
+        from anki_connect_server.handlers import handle_update_note_fields
+
+        with pytest.raises(ValueError, match="not found"):
+            await handle_update_note_fields(
+                anki_wrapper, {"note": {"id": 999999999, "fields": {"Front": "x"}}}
+            )
+
+    @pytest.mark.asyncio
     async def test_can_add_notes_missing_notes(self, anki_wrapper):
         """Test canAddNotes without notes param raises error."""
         from anki_connect_server.handlers import handle_can_add_notes

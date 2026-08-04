@@ -335,10 +335,11 @@ class AnkiWrapper:
     def update_note_fields(self, note: dict) -> None:
         note_id = note.get("id")
         if not note_id:
-            return
-        note_obj = self.col.get_note(NoteId(note_id))
-        if not note_obj:
-            return
+            raise ValueError("updateNoteFields requires an 'id' field")
+        try:
+            note_obj = self.col.get_note(NoteId(note_id))
+        except Exception as e:
+            raise ValueError(f"Note {note_id} not found: {e}") from e
         for field_name, value in note.get("fields", {}).items():
             note_obj[field_name] = value
         self.col.update_note(note_obj)
