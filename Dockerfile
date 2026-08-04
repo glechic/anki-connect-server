@@ -17,12 +17,14 @@ COPY . ./
 RUN mkdir -p /data
 
 # Environment variables
-ENV ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
+ENV ANKICONNECT_COLLECTION_PATH=/data/collection.anki2
 ENV ANKICONNECT_PORT=8765
 ENV ANKICONNECT_BIND=0.0.0.0
 
 # Expose port
 EXPOSE 8765
 
-# Run the server directly
-CMD ["uv", "run", "server"]
+# Run the API server. The CLI exposes 'api' and 'mcp' subcommands; there is
+# no 'server' subcommand (the previous CMD ['uv', 'run', 'server'] was a bug
+# and the container exited immediately on startup).
+CMD ["uv", "run", "anki-connect-server", "api"]
