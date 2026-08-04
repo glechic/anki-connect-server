@@ -422,7 +422,18 @@ class AnkiWrapper:
         return True
 
     def are_suspended(self, cards: list[int]) -> list[bool]:
-        return [self.col.get_card(CardId(c)).queue == -1 for c in cards]
+        result: list[bool] = []
+        for c in cards:
+            try:
+                card = self.col.get_card(CardId(c))
+            except Exception:
+                result.append(False)
+                continue
+            if card is None:
+                result.append(False)
+                continue
+            result.append(card.queue == -1)
+        return result
 
     def are_due(self, cards: list[int]) -> list[bool]:
         result = []

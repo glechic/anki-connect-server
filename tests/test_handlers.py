@@ -288,6 +288,14 @@ class TestCardHandlers:
         assert result[0] is False
 
     @pytest.mark.asyncio
+    async def test_handle_are_suspended_missing_card(self, anki_wrapper):
+        """areSuspended must return False for missing card IDs instead of crashing."""
+        from anki_connect_server.handlers import handle_are_suspended
+        # A card ID that does not exist.
+        result = await handle_are_suspended(anki_wrapper, {"cards": [999999999]})
+        assert result == [False]
+
+    @pytest.mark.asyncio
     async def test_handle_are_due(self, anki_wrapper):
         """Test areDue handler."""
         from anki_connect_server.handlers import handle_are_due
