@@ -60,12 +60,36 @@ def test_config_loads_from_env(monkeypatch):
     monkeypatch.setenv("ANKICONNECT_PORT", "9000")
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_USER", "env@user.com")
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_URL", "https://sync.example.com")
-    
+
     import importlib
     import anki_connect_server.config as config
     importlib.reload(config)
-    
+
     assert config.config.PORT == 9000
     assert config.config.COLLECTION_PATH == "/env/path.anki21"
     assert config.config.ANKIWEB_USER == "env@user.com"
     assert config.config.ANKIWEB_URL == "https://sync.example.com"
+
+
+def test_config_rejects_empty_collection_path():
+    """An empty COLLECTION_PATH must raise instead of letting Collection()
+    fail opaquely later."""
+    from pydantic import ValidationError
+    from anki_connect_server.config import Config
+    with pytest.raises(ValidationError, match="ANKICONNECT_COLLECTION_PATH"):
+        Config(COLLECTION_PATH="")
+
+
+def test_config_accepts_anki2_extension():
+    """A .anki2 path is accepted without warning."""
+    from anki_connect_server.config import Config
+    cfg = Config(COLLECTION_PATH="/data/collection.anki2")
+    assert cfg.COLLECTION_PATH == "/data/collection.anki2"
+
+
+def test_config_accepts_extensionless_path():
+    """An extensionless path (some users keep their collection without .anki2)
+    is accepted so existing setups keep working."""
+    from anki_connect_server.config import Config
+    cfg = Config(COLLECTION_PATH="/data/anki_db")
+    assert cfg.COLLECTION_PATH == "/data/anki_db"

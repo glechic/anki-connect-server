@@ -1,7 +1,10 @@
 from functools import cache
+import logging
 from typing import Optional
-from pydantic import field_validator, model_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Config(BaseSettings):
@@ -24,10 +27,26 @@ class Config(BaseSettings):
 
     FULL_UPLOAD: bool = False
 
+    @field_validator("COLLECTION_PATH")
+    @classmethod
+    def _validate_collection_path(cls, v: str) -> str:
+        if not v:
+            raise ValueError(
+                "ANKICONNECT_COLLECTION_PATH must be set to an Anki collection file "
+                "(typically a .anki2 file)"
+            )
+        if v.endswith(".anki21"):
+            logger.warning(
+                "ANKICONNECT_COLLECTION_PATH %r uses the deprecated '.anki21' "
+                "extension; Anki has consolidated on '.anki2'. Consider renaming.",
+                v,
+            )
+        return v
+
 
 @cache
 def get_config() -> Config:
     return Config()
 
 
-config = Config().model_validate({})
+config = Config()
