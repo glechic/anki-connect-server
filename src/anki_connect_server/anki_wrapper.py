@@ -413,8 +413,10 @@ class AnkiWrapper:
 
     def suspend(self, cards: list[int]) -> bool:
         card_ids = [CardId(c) for c in cards]
-        suspended = self.col.sched.suspend_cards(card_ids)
-        return suspended.count > 0 if hasattr(suspended, 'count') else True
+        if not card_ids:
+            return True
+        self.col.sched.suspend_cards(card_ids)
+        return True
 
     def unsuspend(self, cards: list[int]) -> bool:
         card_ids = [CardId(c) for c in cards]

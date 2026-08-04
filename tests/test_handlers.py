@@ -260,6 +260,35 @@ class TestCardHandlers:
         assert result is True
 
     @pytest.mark.asyncio
+    async def test_handle_suspend_already_suspended_returns_true(self, anki_wrapper):
+        """Suspending an already-suspended card must return True, not False.
+
+        AnkiConnect returns True for the suspend action regardless of how
+        many cards were actually newly suspended. Previously we returned
+        False when suspend_cards reported count=0 (e.g. already suspended),
+        which clients interpret as a failure.
+        """
+        from anki_connect_server.handlers import handle_suspend
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "DoubleSuspend", "Back": "Test"}
+        })
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        # Suspend once.
+        await handle_suspend(anki_wrapper, {"cards": card_ids})
+        # Suspend again -- nothing newly suspended, but must still return True.
+        result = await handle_suspend(anki_wrapper, {"cards": card_ids})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_handle_suspend_empty_list_returns_true(self, anki_wrapper):
+        """Suspending an empty card list must return True (no-op success)."""
+        from anki_connect_server.handlers import handle_suspend
+        result = await handle_suspend(anki_wrapper, {"cards": []})
+        assert result is True
+
+    @pytest.mark.asyncio
     async def test_handle_unsuspend(self, anki_wrapper):
         """Test unsuspend handler."""
         from anki_connect_server.handlers import handle_unsuspend
