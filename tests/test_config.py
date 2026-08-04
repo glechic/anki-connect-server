@@ -56,22 +56,25 @@ def test_validate_passes_with_collection_path():
 
 
 def test_config_loads_from_env(monkeypatch):
-    """Test that config loads from environment variables."""
+    """Config reads ANKICONNECT_* env vars.
+
+    Construct a fresh Config() (not the module singleton) so the test does not
+    need importlib.reload, which would corrupt the module-level 'config' object
+    and the @cache'd get_config() for the rest of the test session (other
+    modules hold a reference to the pre-reload instance).
+    """
     monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/env/path.anki21")
     monkeypatch.setenv("ANKICONNECT_PORT", "9000")
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_USER", "env@user.com")
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_URL", "https://sync.example.com")
 
-    import importlib
+    from anki_connect_server.config import Config
 
-    import anki_connect_server.config as config
-
-    importlib.reload(config)
-
-    assert config.config.PORT == 9000
-    assert config.config.COLLECTION_PATH == "/env/path.anki21"
-    assert config.config.ANKIWEB_USER == "env@user.com"
-    assert config.config.ANKIWEB_URL == "https://sync.example.com"
+    cfg = Config(_env_file=None)
+    assert cfg.PORT == 9000
+    assert cfg.COLLECTION_PATH == "/env/path.anki21"
+    assert cfg.ANKIWEB_USER == "env@user.com"
+    assert cfg.ANKIWEB_URL == "https://sync.example.com"
 
 
 def test_config_rejects_empty_collection_path():
