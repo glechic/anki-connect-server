@@ -10,12 +10,19 @@ from anki_connect_server.anki_wrapper import AnkiWrapper
 
 
 @pytest.fixture(autouse=True)
-def isolate_test_working_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def isolate_test_working_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Run each test from a clean tmp_path so the repo's .env (which may hold
     real AnkiWeb credentials) is not picked up by Config() / pydantic-settings,
     which read .env from the current working directory.
+
+    Provide a placeholder COLLECTION_PATH so Config() validates without the
+    repo's .env; individual tests that build a real AnkiWrapper use the
+    dedicated ``anki_wrapper`` fixture which points at a temp collection.
     """
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", str(tmp_path / "fake.anki2"))
 
 
 @pytest.fixture

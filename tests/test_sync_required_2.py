@@ -25,12 +25,13 @@ from anki_connect_server.sync import (
 
 @pytest.fixture
 def patched_config(monkeypatch):
-    """Set ANKIWEB_USER/PASS on the module-level config singleton, auto-restored."""
-    from anki_connect_server.config import config
+    """Set ANKIWEB_USER/PASS on the cached config singleton, auto-restored."""
+    from anki_connect_server.config import get_config
 
-    monkeypatch.setattr(config, "ANKIWEB_USER", "test")
-    monkeypatch.setattr(config, "ANKIWEB_PASS", "test")
-    return config
+    cfg = get_config()
+    monkeypatch.setattr(cfg, "ANKIWEB_USER", "test")
+    monkeypatch.setattr(cfg, "ANKIWEB_PASS", "test")
+    return cfg
 
 
 def _mock_media_status(active: bool, checked: str = "", added: str = "", removed: str = ""):

@@ -45,6 +45,3 @@ class Config(BaseSettings):
 @cache
 def get_config() -> Config:
     return Config()
-
-
-config = Config()

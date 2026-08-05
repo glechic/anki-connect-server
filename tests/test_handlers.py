@@ -436,12 +436,13 @@ class TestSyncHandlers:
     @pytest.mark.asyncio
     async def test_handle_sync_status_missing_credentials_raises(self, anki_wrapper, monkeypatch):
         """syncStatus without credentials raises ValueError."""
-        from anki_connect_server.config import config
+        from anki_connect_server.config import get_config
         from anki_connect_server.handlers import dispatch
 
-        # Clear any credentials the module-level config picked up from .env.
-        monkeypatch.setattr(config, "ANKIWEB_USER", None)
-        monkeypatch.setattr(config, "ANKIWEB_PASS", None)
+        # Clear any credentials the cached config picked up from .env.
+        cfg = get_config()
+        monkeypatch.setattr(cfg, "ANKIWEB_USER", None)
+        monkeypatch.setattr(cfg, "ANKIWEB_PASS", None)
         with pytest.raises(ValueError, match="ANKICONNECT_ANKIWEB_USER"):
             await dispatch("syncStatus", {}, anki_wrapper)
 

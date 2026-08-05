@@ -17,7 +17,7 @@ from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
 from anki.notes import Note, NoteId
 from anki.sync_pb2 import MediaSyncStatusResponse, SyncCollectionResponse
 
-from anki_connect_server.config import config
+from anki_connect_server.config import get_config
 from anki_connect_server.sync import (
     CollectionSyncOutcome,
     CollectionSyncResult,
@@ -73,9 +73,10 @@ class AnkiWrapper:
         *,
         operation: str,
     ) -> tuple[str, str, str | None]:
-        user = username or config.ANKIWEB_USER
-        pass_ = password or config.ANKIWEB_PASS
-        url = endpoint or config.ANKIWEB_URL
+        cfg = get_config()
+        user = username or cfg.ANKIWEB_USER
+        pass_ = password or cfg.ANKIWEB_PASS
+        url = endpoint or cfg.ANKIWEB_URL
         if not user or not pass_:
             raise ValueError(f"ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for {operation}")
         return user, pass_, url
@@ -682,9 +683,10 @@ class AnkiWrapper:
         password: str | None = None,
         endpoint: str | None = None,
     ) -> JsonObject:
-        user = username or config.ANKIWEB_USER
-        pass_ = password or config.ANKIWEB_PASS
-        url = endpoint or config.ANKIWEB_URL
+        cfg = get_config()
+        user = username or cfg.ANKIWEB_USER
+        pass_ = password or cfg.ANKIWEB_PASS
+        url = endpoint or cfg.ANKIWEB_URL
 
         if not user or not pass_:
             raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for sync status")
