@@ -1,10 +1,16 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
-from anki_connect_server.types import JsonObject
+from anki_connect_server.types import (
+    CardTemplateInput,
+    JsonObject,
+    ModelStylingUpdate,
+    ModelTemplateUpdate,
+    NoteInput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +91,23 @@ def _get_obj(params: JsonObject, key: str) -> JsonObject:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _require_typed(params: JsonObject, key: str, required: tuple[str, ...]) -> JsonObject:
+    """Extract a JsonObject and validate it has the required keys.
+
+    TypedDicts can't be checked with isinstance at runtime; we validate the
+    presence of required keys instead. The caller casts the returned
+    JsonObject to the specific TypedDict shape.
+    """
+    require_params(params, key)
+    value = params.get(key, {})
+    if not isinstance(value, dict):
+        raise ValidationError(f"{key} must be a dictionary")
+    missing = [k for k in required if k not in value or value[k] is None]
+    if missing:
+        raise ValidationError(f"Missing required fields in {key}: {', '.join(missing)}")
+    return value
 
 
 async def _run[R](func: Callable[..., R], *args: object, **kwargs: object) -> R:
@@ -213,7 +236,7 @@ async def handle_create_model(wrapper: AnkiWrapper, params: JsonObject) -> None:
     model_name = _get_str(params, "modelName")
     in_order_fields = _get_str_list(params, "inOrderFields")
     raw_templates = params.get("cardTemplates", [])
-    card_templates: list[dict[str, str]] = []
+    card_templates: list[CardTemplateInput] = []
     if isinstance(raw_templates, list):
         card_templates.extend(
             {
@@ -240,20 +263,26 @@ async def handle_model_styling(wrapper: AnkiWrapper, params: JsonObject) -> Json
 
 
 async def handle_update_model_templates(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    model = _get_obj(params, "model")
+    model = cast(
+        ModelTemplateUpdate,
+        _require_typed(params, "model", ("name", "templates")),
+    )
     await _run(wrapper.update_model_templates, model)
 
 
 async def handle_update_model_styling(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    model = _get_obj(params, "model")
+    model = cast(
+        ModelStylingUpdate,
+        _require_typed(params, "model", ("name", "css")),
+    )
     await _run(wrapper.update_model_styling, model)
 
 
 async def handle_add_note(wrapper: AnkiWrapper, params: JsonObject) -> int | None:
-    require_params(params, "note")
-    note = params.get("note", {})
-    if not isinstance(note, dict):
-        raise ValidationError("note must be a dictionary")
+    note = cast(
+        NoteInput,
+        _require_typed(params, "note", ("deckName", "modelName", "fields")),
+    )
     return await _run(wrapper.add_note, note)
 
 
@@ -262,7 +291,8 @@ async def handle_add_notes(wrapper: AnkiWrapper, params: JsonObject) -> list[int
     notes = params.get("notes", [])
     if not isinstance(notes, list):
         raise ValidationError("notes must be a list")
-    return await _run(wrapper.add_notes, notes)
+    typed_notes: list[NoteInput] = [cast(NoteInput, n) for n in notes if isinstance(n, dict)]
+    return await _run(wrapper.add_notes, typed_notes)
 
 
 async def handle_can_add_notes(wrapper: AnkiWrapper, params: JsonObject) -> list[bool]:
@@ -270,7 +300,8 @@ async def handle_can_add_notes(wrapper: AnkiWrapper, params: JsonObject) -> list
     notes = params.get("notes", [])
     if not isinstance(notes, list):
         raise ValidationError("notes must be a list")
-    return await _run(wrapper.can_add_notes, notes)
+    typed_notes: list[NoteInput] = [cast(NoteInput, n) for n in notes if isinstance(n, dict)]
+    return await _run(wrapper.can_add_notes, typed_notes)
 
 
 async def handle_update_note_fields(wrapper: AnkiWrapper, params: JsonObject) -> None:
