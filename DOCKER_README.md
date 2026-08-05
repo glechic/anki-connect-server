@@ -1,7 +1,8 @@
 # AnkiConnect Server - Docker Image
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/your-docker-username/anki-connect-server)](https://hub.docker.com/r/your-docker-username/anki-connect-server)
-[![Docker Version](https://img.shields.io/docker/v/your-docker-username/anki-connect-server)](https://hub.docker.com/r/your-docker-username/anki-connect-server)
+[![Docker Pulls](https://img.shields.io/docker/pulls/glechic/anki-connect-server)](https://hub.docker.com/r/glechic/anki-connect-server)
+[![Docker Version](https://img.shields.io/docker/v/glechic/anki-connect-server)](https://hub.docker.com/r/glechic/anki-connect-server)
+[![Image Size](https://img.shields.io/docker/image-size/glechic/anki-connect-server/latest)](https://hub.docker.com/r/glechic/anki-connect-server)
 
 ## Overview
 
@@ -28,7 +29,7 @@ docker run -d \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
-  your-docker-username/anki-connect-server:latest
+  glechic/anki-connect-server:latest
 ```
 
 ### Docker Compose
@@ -38,7 +39,7 @@ version: '3.8'
 
 services:
   anki-connect-server:
-    image: your-docker-username/anki-connect-server:latest
+    image: glechic/anki-connect-server:latest
     container_name: anki-connect-server
     ports:
       - "8765:8765"
@@ -120,7 +121,7 @@ The image also includes MCP server support for AI assistants:
 docker run -d \
   -v /path/to/collection.anki21:/data/collection.anki21 \
   -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
-  your-docker-username/anki-connect-server \
+  glechic/anki-connect-server \
   uv run mcp-server
 ```
 
