@@ -1,0 +1,108 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality (Python 3.12)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "0.7.3"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Check lock file
+        run: uv lock --check
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run pyright
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build
+
+      - name: Smoke test installed wheel
+        run: uv run --isolated --no-project --with dist/*.whl anki-connect-server --help
+
+  compatibility:
+    name: Tests (Python 3.13)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "0.7.3"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Test
+        run: uv run pytest
+
+  docker:
+    name: Docker smoke test
+    runs-on: ubuntu-latest
+    needs: [quality, compatibility]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --tag anki-connect-server:test .
+
+      - name: Smoke test API
+        run: |
+          docker run --detach --name anki-connect-server-test --publish 8765:8765 anki-connect-server:test
+          trap 'docker rm --force anki-connect-server-test' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8765/health; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs anki-connect-server-test
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data '{"action":"version","version":6}' \
+            http://localhost:8765/ \
+            | grep --fixed-strings '"result":6'

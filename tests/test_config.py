@@ -42,7 +42,7 @@ def test_config_optional_ankiweb(monkeypatch):
     monkeypatch.delenv("ANKICONNECT_ANKIWEB_USER", raising=False)
     monkeypatch.delenv("ANKICONNECT_ANKIWEB_PASS", raising=False)
 
-    cfg = Config(_env_file=None)
+    cfg = Config(_env_file=None)  # type: ignore[call-arg]
     assert cfg.ANKIWEB_USER is None
     assert cfg.ANKIWEB_PASS is None
 
@@ -70,7 +70,7 @@ def test_config_loads_from_env(monkeypatch):
 
     from anki_connect_server.config import Config
 
-    cfg = Config(_env_file=None)
+    cfg = Config(_env_file=None)  # type: ignore[call-arg]
     assert cfg.PORT == 9000
     assert cfg.COLLECTION_PATH == "/env/path.anki21"
     assert cfg.ANKIWEB_USER == "env@user.com"

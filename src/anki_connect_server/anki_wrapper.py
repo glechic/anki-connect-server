@@ -4,14 +4,19 @@
 # anki.cards.Card while anki.cards is still initialising).
 import base64
 import logging
+import re
 import threading
-from typing import Any
+import time
+from typing import Any, cast
 
 from anki.collection import Collection
 from anki.cards import CardId
+from anki.decks import DeckConfigDict, DeckConfigId, DeckId
+from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
 from anki.notes import Note, NoteId
 
 from anki_connect_server.config import config
+from anki_connect_server.types import JsonObject
 
 logger = logging.getLogger(__name__)
 
@@ -21,27 +26,23 @@ class SyncError(RuntimeError):
 
 
 class AnkiWrapper:
-    def __init__(self, collection_path: str):
+    def __init__(self, collection_path: str) -> None:
         Collection.initialize_backend_logging()
         self.collection_path = collection_path
-        self.col = Collection(collection_path)
+        self.col: Collection = Collection(collection_path)
         self._sync_lock = threading.Lock()
 
-    def close(self):
-        if self.col:
-            self.col.close()
+    def close(self) -> None:
+        self.col.close()
 
     def abort_sync(self) -> None:
         """Abort any in-progress collection and media syncs."""
-        col = getattr(self, "col", None)
-        if col is None:
-            return
         try:
-            col.abort_sync()
+            self.col.abort_sync()
         except Exception as e:
             logger.warning(f"abort_sync: col.abort_sync failed: {type(e).__name__}: {e}")
         try:
-            col.abort_media_sync()
+            self.col.abort_media_sync()
         except Exception as e:
             logger.warning(f"abort_sync: col.abort_media_sync failed: {type(e).__name__}: {e}")
 
@@ -129,11 +130,6 @@ class AnkiWrapper:
                     )
                     # Leave self.col as the (closed) handle; operations on it
                     # will raise, signalling the unusable state.
-            else:
-                # Collection was never closed for full sync; the handle is
-                # still valid (or the close itself failed). Leave it alone so
-                # the caller can retry without us clobbering the handle.
-                pass
             raise
 
         logger.info(f"Sync completed: host={result.host_number}, required={result.required}")
@@ -153,10 +149,10 @@ class AnkiWrapper:
 
     def deck_names_and_ids(self) -> dict[str, int]:
         decks = self.col.decks.all_names_and_ids()
-        return {d.name: d.id for d in decks}
+        return {d.name: int(d.id) for d in decks}
 
     def create_deck(self, deck: str) -> int:
-        return self.col.decks.id(deck)
+        return int(cast(int, self.col.decks.id(deck)))
 
     def delete_decks(self, decks: list[str], cards_too: bool = False) -> None:
         for deck in decks:
@@ -165,11 +161,12 @@ class AnkiWrapper:
                 if cards_too:
                     card_ids = self.col.find_cards(f"deck:{deck}")
                     if card_ids:
-                        self.col.remove_notes(list(self.cards_to_notes(card_ids)))
+                        note_ids = [NoteId(n) for n in self.cards_to_notes(list(card_ids))]
+                        self.col.remove_notes(note_ids)
                 self.col.decks.remove([deck_id])
 
     def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
-        result = {}
+        result: dict[str, list[int]] = {}
         for card_id in cards:
             card = self.col.get_card(CardId(card_id))
             if card:
@@ -180,31 +177,35 @@ class AnkiWrapper:
         return result
 
     def change_deck(self, cards: list[int], deck: str) -> None:
-        deck_id = self.col.decks.id(deck)
+        deck_id = cast(DeckId, self.col.decks.id(deck))
         self.col.set_deck([CardId(c) for c in cards], deck_id)
 
-    def get_deck_config(self, deck: str) -> dict:
+    def get_deck_config(self, deck: str) -> JsonObject:
         deck_id = self.col.decks.id_for_name(deck)
         if not deck_id:
             return {}
-        return self.col.decks.config_dict_for_deck_id(deck_id)
+        return cast(JsonObject, self.col.decks.config_dict_for_deck_id(deck_id))
 
-    def save_deck_config(self, config: dict) -> bool:
-        self.col.decks.update_config(config)
+    def save_deck_config(self, config: JsonObject) -> bool:
+        self.col.decks.update_config(cast(DeckConfigDict, config))
         return True
 
     def set_deck_config_id(self, decks: list[str], config_id: int) -> bool:
         for deck in decks:
             deck_id = self.col.decks.id_for_name(deck)
             if deck_id:
-                self.col.decks.set_config_id_for_deck_dict(deck_id, config_id)
+                deck_dict = self.col.decks.get(deck_id)
+                if deck_dict is not None:
+                    self.col.decks.set_config_id_for_deck_dict(deck_dict, DeckConfigId(config_id))
         return True
 
     def clone_deck_config_id(self, name: str, clone_from: int) -> int:
-        return self.col.decks.add_config_returning_id(name, clone_from)
+        return int(
+            self.col.decks.add_config_returning_id(name, cast(DeckConfigDict | None, clone_from))
+        )
 
     def remove_deck_config_id(self, config_id: int) -> bool:
-        self.col.decks.remove_config(config_id)
+        self.col.decks.remove_config(DeckConfigId(config_id))
         return True
 
     def model_names(self) -> list[str]:
@@ -213,39 +214,43 @@ class AnkiWrapper:
 
     def model_names_and_ids(self) -> dict[str, int]:
         models = self.col.models.all_names_and_ids()
-        return {m.name: m.id for m in models}
+        return {m.name: int(m.id) for m in models}
 
-    def _get_model_by_name(self, model_name: str):
+    def _get_model_by_name(self, model_name: str) -> NotetypeDict | None:
         """Get model dict by name."""
         models = self.col.models.all_names_and_ids()
         for m in models:
             if m.name == model_name:
-                return self.col.models.get(m.id)
+                return self.col.models.get(NotetypeId(m.id))
         return None
+
+    def _model_fields(self, model: NotetypeDict) -> list[FieldDict]:
+        return cast(list[FieldDict], model.get("flds", []))
+
+    def _model_templates(self, model: NotetypeDict) -> list[TemplateDict]:
+        return cast(list[TemplateDict], model.get("tmpls", []))
 
     def model_field_names(self, model_name: str) -> list[str]:
         model = self._get_model_by_name(model_name)
         if not model:
             return []
-        return [f["name"] for f in model.get("flds", [])]
+        return [cast(str, f["name"]) for f in self._model_fields(model)]
 
     def model_fields_on_templates(self, model_name: str) -> dict[str, list[list[str]]]:
         model = self._get_model_by_name(model_name)
         if not model:
             return {}
-        result = {}
-        for tmpl in model.get("tmpls", []):
-            name = tmpl.get("name", "")
-            qfmt = tmpl.get("qfmt", "")
-            afmt = tmpl.get("afmt", "")
+        result: dict[str, list[list[str]]] = {}
+        for tmpl in self._model_templates(model):
+            name = cast(str, tmpl.get("name", ""))
+            qfmt = cast(str, tmpl.get("qfmt", ""))
+            afmt = cast(str, tmpl.get("afmt", ""))
             q_fields = self._extract_fields_from_template(qfmt)
             a_fields = self._extract_fields_from_template(afmt)
             result[name] = [q_fields, a_fields]
         return result
 
     def _extract_fields_from_template(self, template: str) -> list[str]:
-        import re
-
         fields = re.findall(r"\{\{([^}]+)\}\}", template)
         return [f for f in fields if not f.startswith("!")]
 
@@ -253,12 +258,12 @@ class AnkiWrapper:
         self,
         model_name: str,
         in_order_fields: list[str],
-        card_templates: list[dict],
+        card_templates: list[dict[str, str]],
         css: str = "",
         is_cloze: bool = False,
     ) -> None:
         notetype = self.col.models.new(model_name)
-        for _i, field_name in enumerate(in_order_fields):
+        for field_name in in_order_fields:
             field = self.col.models.new_field(field_name)
             self.col.models.add_field(notetype, field)
 
@@ -277,150 +282,172 @@ class AnkiWrapper:
         model = self._get_model_by_name(model_name)
         if not model:
             return {}
-        result = {}
-        for tmpl in model.get("tmpls", []):
-            name = tmpl.get("name", "")
-            result[name] = {"Front": tmpl.get("qfmt", ""), "Back": tmpl.get("afmt", "")}
+        result: dict[str, dict[str, str]] = {}
+        for tmpl in self._model_templates(model):
+            name = cast(str, tmpl.get("name", ""))
+            result[name] = {
+                "Front": cast(str, tmpl.get("qfmt", "")),
+                "Back": cast(str, tmpl.get("afmt", "")),
+            }
         return result
 
-    def model_styling(self, model_name: str) -> dict[str, Any]:
+    def model_styling(self, model_name: str) -> JsonObject:
         model = self._get_model_by_name(model_name)
         if not model:
             return {}
-        return {"css": model.get("css", "")}
+        return {"css": cast(str, model.get("css", ""))}
 
-    def update_model_templates(self, model: dict) -> None:
-        notetype = self._get_model_by_name(model["name"])
+    def update_model_templates(self, model: JsonObject) -> None:
+        name = model.get("name")
+        if not isinstance(name, str):
+            return
+        notetype = self._get_model_by_name(name)
         if not notetype:
             return
-        for templates in model.get("templates", {}).values():
-            for tmpl in notetype["tmpls"]:
-                if "Front" in templates:
-                    tmpl["qfmt"] = templates["Front"]
-                if "Back" in templates:
-                    tmpl["afmt"] = templates["Back"]
+        templates = model.get("templates", {})
+        if isinstance(templates, dict):
+            for templates_update in templates.values():
+                if not isinstance(templates_update, dict):
+                    continue
+                for tmpl in self._model_templates(notetype):
+                    if "Front" in templates_update:
+                        tmpl["qfmt"] = cast(str, templates_update["Front"])
+                    if "Back" in templates_update:
+                        tmpl["afmt"] = cast(str, templates_update["Back"])
         self.col.models.update(notetype)
 
-    def update_model_styling(self, model: dict) -> None:
-        notetype = self._get_model_by_name(model["name"])
+    def update_model_styling(self, model: JsonObject) -> None:
+        name = model.get("name")
+        if not isinstance(name, str):
+            return
+        notetype = self._get_model_by_name(name)
         if not notetype:
             return
         if "css" in model:
-            notetype["css"] = model["css"]
+            notetype["css"] = cast(str, model["css"])
         self.col.models.update(notetype)
 
-    def add_note(self, note: dict) -> int | None:
+    def add_note(self, note: JsonObject) -> int | None:
         model_name = note.get("modelName", "")
+        if not isinstance(model_name, str):
+            return None
         notetype = self._get_model_by_name(model_name)
         if not notetype:
             return None
-        deck_id = self.col.decks.id(note.get("deckName", "Default"))
+        deck_name = note.get("deckName", "Default")
+        if not isinstance(deck_name, str):
+            deck_name = "Default"
+        deck_id = cast(DeckId, self.col.decks.id(deck_name))
         new_note = Note(self.col, notetype)
-        for field_name, value in note.get("fields", {}).items():
-            new_note[field_name] = value
-        if "tags" in note:
-            new_note.tags = note["tags"]
+        fields = note.get("fields", {})
+        if isinstance(fields, dict):
+            for field_name, value in fields.items():
+                new_note[field_name] = str(value) if value is not None else ""
+        tags = note.get("tags")
+        if isinstance(tags, list):
+            new_note.tags = [str(t) for t in tags]
         self.col.add_note(new_note, deck_id)
-        return new_note.id
+        return int(new_note.id)
 
-    def add_notes(self, notes: list[dict]) -> list[int | None]:
-        results = []
-        for note in notes:
-            results.append(self.add_note(note))
-        return results
+    def add_notes(self, notes: list[JsonObject]) -> list[int | None]:
+        return [self.add_note(note) for note in notes]
 
-    def can_add_notes(self, notes: list[dict]) -> list[bool]:
+    def can_add_notes(self, notes: list[JsonObject]) -> list[bool]:
         return [bool(self.add_note(n)) for n in notes]
 
-    def update_note_fields(self, note: dict) -> None:
+    def update_note_fields(self, note: JsonObject) -> None:
         note_id = note.get("id")
-        if not note_id:
+        if not isinstance(note_id, int):
             raise ValueError("updateNoteFields requires an 'id' field")
         try:
             note_obj = self.col.get_note(NoteId(note_id))
         except Exception as e:
             raise ValueError(f"Note {note_id} not found: {e}") from e
-        for field_name, value in note.get("fields", {}).items():
-            note_obj[field_name] = value
+        fields = note.get("fields", {})
+        if isinstance(fields, dict):
+            for field_name, value in fields.items():
+                note_obj[field_name] = str(value) if value is not None else ""
         self.col.update_note(note_obj)
 
     def add_tags(self, notes: list[int], tags: str) -> None:
-        self.col.tags.add_tags((NoteId(n) for n in notes), tags.split())
+        self.col.tags.add_tags((NoteId(n) for n in notes), tags.split())  # type: ignore[union-attr]
 
     def remove_tags(self, notes: list[int], tags: str) -> None:
-        self.col.tags.remove_tags((NoteId(n) for n in notes), tags.split())
+        self.col.tags.remove_tags((NoteId(n) for n in notes), tags.split())  # type: ignore[union-attr]
 
     def get_tags(self) -> list[str]:
         return list(self.col.tags.all())
 
     def find_notes(self, query: str) -> list[int]:
-        return list(self.col.find_notes(query))
+        return [int(n) for n in self.col.find_notes(query)]
 
-    def notes_info(self, notes: list[int]) -> list[dict]:
-        result = []
+    def notes_info(self, notes: list[int]) -> list[JsonObject]:
+        result: list[JsonObject] = []
         for note_id in notes:
             try:
                 note = self.col.get_note(NoteId(note_id))
             except Exception as e:
                 logger.debug("notes_info: skipping note %s: %s", note_id, e)
                 continue
-            if not note:
-                continue
             model = self.col.models.get(note.mid)
+            fields: dict[str, JsonObject] = {}
+            for i, (name, value) in enumerate(note.items()):
+                fields[name] = {"value": value, "order": i}
             result.append(
-                {
-                    "noteId": note.id,
-                    "modelName": model["name"] if model else "",
-                    "tags": list(note.tags),
-                    "fields": {
-                        name: {"value": value, "order": i}
-                        for i, (name, value) in enumerate(note.items())
+                cast(
+                    JsonObject,
+                    {
+                        "noteId": int(note.id),
+                        "modelName": model["name"] if model else "",
+                        "tags": list(note.tags),
+                        "fields": fields,
                     },
-                }
+                )
             )
         return result
 
     def delete_notes(self, notes: list[int]) -> None:
-        self.col.remove_notes(NoteId(n) for n in notes)
+        self.col.remove_notes([NoteId(n) for n in notes])
 
     def find_cards(self, query: str) -> list[int]:
-        return list(self.col.find_cards(query))
+        return [int(c) for c in self.col.find_cards(query)]
 
     def cards_to_notes(self, cards: list[int]) -> list[int]:
-        note_ids = []
+        note_ids: set[int] = set()
         for c in cards:
             card = self.col.get_card(CardId(c))
             if card:
-                note_ids.append(card.nid)
-        return list(set(note_ids))
+                note_ids.add(int(card.nid))
+        return list(note_ids)
 
-    def cards_info(self, cards: list[int]) -> list[dict]:
-        result = []
+    def cards_info(self, cards: list[int]) -> list[JsonObject]:
+        result: list[JsonObject] = []
         for card_id in cards:
             try:
                 card = self.col.get_card(CardId(card_id))
             except Exception as e:
                 logger.debug("cards_info: skipping card %s: %s", card_id, e)
                 continue
-            if not card:
-                continue
             note = card.note()
             model = self.col.models.get(note.mid)
+            fields: dict[str, JsonObject] = {}
+            for i, (name, value) in enumerate(note.items()):
+                fields[name] = {"value": value, "order": i}
             result.append(
-                {
-                    "cardId": card.id,
-                    "note": note.id,
-                    "deckName": self.col.decks.name(card.did),
-                    "modelName": model["name"] if model else "",
-                    "fields": {
-                        name: {"value": value, "order": i}
-                        for i, (name, value) in enumerate(note.items())
+                cast(
+                    JsonObject,
+                    {
+                        "cardId": int(card.id),
+                        "note": int(note.id),
+                        "deckName": self.col.decks.name(card.did),
+                        "modelName": model["name"] if model else "",
+                        "fields": fields,
+                        "interval": card.ivl,
+                        "ease": card.factor,
+                        "question": card.q(reload=True),  # type: ignore[union-attr]
+                        "answer": card.a(),  # type: ignore[union-attr]
                     },
-                    "interval": card.ivl,
-                    "ease": card.factor,
-                    "question": card.q(reload=True),
-                    "answer": card.a(),
-                }
+                )
             )
         return result
 
@@ -444,14 +471,11 @@ class AnkiWrapper:
             except Exception:
                 result.append(False)
                 continue
-            if card is None:
-                result.append(False)
-                continue
             result.append(card.queue == -1)
         return result
 
     def are_due(self, cards: list[int]) -> list[bool]:
-        result = []
+        result: list[bool] = []
         for c in cards:
             try:
                 card = self.col.get_card(CardId(c))
@@ -467,29 +491,31 @@ class AnkiWrapper:
         return result
 
     def get_intervals(self, cards: list[int], complete: bool = False) -> list[Any]:
-        result = []
+        result: list[Any] = []
         for card_id in cards:
             try:
                 card = self.col.get_card(CardId(card_id))
             except Exception:
                 result.append(None)
                 continue
-            if not card:
-                result.append(None)
-                continue
             if complete:
                 last_interval = self._last_interval_from_revlog(card_id)
                 result.append(
-                    {
-                        "interval": card.ivl,
-                        # last_interval is the previous interval in days, sourced
-                        # from the most recent review log entry. Falls back to the
-                        # current interval when there is no review history (e.g.
-                        # a brand-new card).
-                        "last_interval": last_interval if last_interval is not None else card.ivl,
-                        "is_learning": card.queue in (1, 3),
-                        "is_mature": card.ivl >= 21,
-                    }
+                    cast(
+                        JsonObject,
+                        {
+                            "interval": card.ivl,
+                            # last_interval is the previous interval in days, sourced
+                            # from the most recent review log entry. Falls back to the
+                            # current interval when there is no review history (e.g.
+                            # a brand-new card).
+                            "last_interval": last_interval
+                            if last_interval is not None
+                            else card.ivl,
+                            "is_learning": card.queue in (1, 3),
+                            "is_mature": card.ivl >= 21,
+                        },
+                    )
                 )
             else:
                 result.append(card.ivl)
@@ -526,27 +552,27 @@ class AnkiWrapper:
 
     def retrieve_media_file(self, filename: str) -> str | None:
         try:
-            data = self.col.media.read_data(filename)
+            data = cast(bytes, self.col.media.read_data(filename))  # type: ignore[union-attr]
             return base64.b64encode(data).decode()
         except Exception:
             return None
 
     def delete_media_file(self, filename: str) -> None:
-        self.col.media.delete_file(filename)
+        self.col.media.delete_file(filename)  # type: ignore[union-attr]
 
-    def import_package(self, path: str) -> dict:
-        return self.col.import_anki_package(path)
+    def import_package(self, path: str) -> JsonObject:
+        return cast(JsonObject, self.col.import_anki_package(path))  # type: ignore[call-arg]
 
     def export_package(self, deck: str, path: str, include_sched: bool = False) -> None:
-        deck_id = self.col.decks.id(deck)
-        self.col.export_anki_package(path, deck_id, include_sched)
+        deck_id = cast(DeckId, self.col.decks.id(deck))
+        self.col.export_anki_package(path, deck_id, include_sched)  # type: ignore[call-arg]
 
     def sync_status(
         self,
         username: str | None = None,
         password: str | None = None,
         endpoint: str | None = None,
-    ) -> dict:
+    ) -> JsonObject:
         user = username or config.ANKIWEB_USER
         pass_ = password or config.ANKIWEB_PASS
         url = endpoint or config.ANKIWEB_URL
@@ -573,10 +599,7 @@ class AnkiWrapper:
         without waiting we falsely report completion. Poll
         media_sync_status() until it reports not running.
         """
-        import time
-
         deadline = time.monotonic() + timeout
-        last = None
         while True:
             try:
                 status = self.col.media_sync_status()
@@ -584,16 +607,11 @@ class AnkiWrapper:
                 logger.warning(f"media_sync_status poll failed: {type(e).__name__}: {e}")
                 return
             running = getattr(status, "running", None)
-            if running is False:
+            if running is False or running is None:
+                # Older/mocked response without the attribute; assume done.
                 return
-            if running is None:
-                # Older/mocked response without attribute; assume done.
-                return
-            last = status
             if time.monotonic() >= deadline:
-                logger.warning(
-                    f"media sync did not finish within {timeout}s; aborting wait (last status={last})"
-                )
+                logger.warning(f"media sync did not finish within {timeout}s; aborting wait")
                 self.abort_sync()
                 raise SyncError(f"media sync timed out after {timeout}s")
             time.sleep(poll_interval)
@@ -629,21 +647,3 @@ class AnkiWrapper:
             return "media sync completed"
         finally:
             self._sync_lock.release()
-
-    def get_sync_auth(
-        self,
-        username: str | None = None,
-        password: str | None = None,
-        endpoint: str | None = None,
-    ) -> Any:
-        user = username or config.ANKIWEB_USER
-        pass_ = password or config.ANKIWEB_PASS
-        url = endpoint or config.ANKIWEB_URL
-
-        if not user or not pass_:
-            return None
-        return self.col.sync_login(
-            username=user,
-            password=pass_,
-            endpoint=url,
-        )

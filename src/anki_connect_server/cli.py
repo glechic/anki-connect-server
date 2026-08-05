@@ -4,7 +4,7 @@ import argparse
 import sys
 
 
-def main(argv: list[str] | None = None):
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="anki-connect-server",
         description="Headless AnkiConnect-compatible REST API server with MCP support",

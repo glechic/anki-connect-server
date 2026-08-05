@@ -1,5 +1,6 @@
+import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -8,6 +9,9 @@ from pydantic import BaseModel
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import Config, get_config
 from anki_connect_server.handlers import dispatch
+from anki_connect_server.types import JsonValue
+
+logger = logging.getLogger(__name__)
 
 
 def create_anki_wrapper(config: Config | None = None) -> AnkiWrapper:
@@ -15,13 +19,16 @@ def create_anki_wrapper(config: Config | None = None) -> AnkiWrapper:
     return AnkiWrapper(settings.COLLECTION_PATH)
 
 
-@asynccontextmanager
-async def app_lifespan(app: FastAPI):
+@asynccontextmanager  # type: ignore[deprecated]
+async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.anki_wrapper = create_anki_wrapper()
-    yield
-    if app.state.anki_wrapper:
-        app.state.anki_wrapper.close()
-        app.state.anki_wrapper = None
+    try:
+        yield
+    finally:
+        wrapper: AnkiWrapper | None = getattr(app.state, "anki_wrapper", None)
+        if wrapper is not None:
+            wrapper.close()
+            app.state.anki_wrapper = None
 
 
 app = FastAPI(
@@ -35,29 +42,29 @@ app = FastAPI(
 class AnkiConnectRequest(BaseModel):
     action: str
     version: int = 6
-    params: dict = {}
+    params: dict[str, JsonValue] = {}
 
 
 class AnkiConnectResponse(BaseModel):
-    result: Any
+    result: JsonValue
     error: str | None = None
 
 
 def get_request_wrapper(request: Request) -> AnkiWrapper:
-    wrapper = getattr(request.app.state, "anki_wrapper", None)
+    wrapper: AnkiWrapper | None = getattr(request.app.state, "anki_wrapper", None)
     if wrapper is None:
         raise RuntimeError("Server not initialized")
     return wrapper
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
 @app.post("/", response_model=AnkiConnectResponse)
 @app.post("/api", response_model=AnkiConnectResponse)
-async def handle_request(req: AnkiConnectRequest, request: Request):
+async def handle_request(req: AnkiConnectRequest, request: Request) -> dict[str, JsonValue]:
     wrapper = get_request_wrapper(request)
     try:
         result = await dispatch(req.action, req.params, wrapper)
@@ -72,19 +79,21 @@ async def handle_request(req: AnkiConnectRequest, request: Request):
 
 
 @app.exception_handler(Exception)
-async def server_error_handler(request: Request, exc: Exception):
+async def server_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """Surface unexpected (non-ValueError) exceptions as HTTP 500 instead of
     swallowing them into a 200 with an error field. A corrupted-collection crash
     is a server fault, not a client error, and should not be reported with 200."""
-    import logging
-
-    logging.getLogger("anki_connect_server.api").exception(
-        "Unhandled exception processing %s %s", request.method, request.url.path
+    logger.error(
+        "Unhandled exception processing %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+        exc_info=exc,
     )
     return JSONResponse(status_code=500, content={"result": None, "error": str(exc)})
 
 
-def run_server():
+def run_server() -> None:
     """Run the FastAPI server."""
     import uvicorn
 

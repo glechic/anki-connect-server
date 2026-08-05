@@ -247,12 +247,12 @@ class TestRequired2Behavior:
                 wrapper = AnkiWrapper(collection_path)
 
                 # Acquire the lock manually to simulate an in-progress sync.
-                assert wrapper._sync_lock.acquire(blocking=False) is True
+                assert wrapper._sync_lock.acquire(blocking=False) is True  # type: ignore[private-usage]
                 try:
                     with pytest.raises(SyncError, match="already in progress"):
                         wrapper.sync_to_ankiweb()
                 finally:
-                    wrapper._sync_lock.release()
+                    wrapper._sync_lock.release()  # type: ignore[private-usage]
 
                 # After release, sync must work again.
                 mock_col.full_upload_or_download.reset_mock()

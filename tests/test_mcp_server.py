@@ -28,10 +28,9 @@ def patch_api_wrapper(api_wrapper):
     """Patch the MCP server's internal wrapper for each test."""
     from anki_connect_server import mcp_server
 
-    original = mcp_server._anki_wrapper
-    mcp_server._anki_wrapper = api_wrapper
+    original = mcp_server.set_wrapper_for_test(api_wrapper)
     yield api_wrapper
-    mcp_server._anki_wrapper = original
+    mcp_server.set_wrapper_for_test(original)
 
 
 class TestMCPWrapper:
@@ -101,6 +100,7 @@ class TestMCPWrapper:
         from anki_connect_server.mcp_server import add_note, get_notes_info
 
         note_id = add_note("Default", "Basic", {"Front": "Test", "Back": "Test"})
+        assert note_id is not None
         result = get_notes_info([note_id])
         assert len(result) == 1
         assert result[0]["noteId"] == note_id
@@ -110,6 +110,7 @@ class TestMCPWrapper:
         from anki_connect_server.mcp_server import add_note, delete_notes
 
         note_id = add_note("Default", "Basic", {"Front": "ToDelete", "Back": "Test"})
+        assert note_id is not None
         result = delete_notes([note_id])
         assert result is True
 
