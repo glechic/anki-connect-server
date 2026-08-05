@@ -4,7 +4,7 @@ from fastmcp import FastMCP
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import get_config
-from anki_connect_server.types import JsonObject
+from anki_connect_server.types import JsonObject, NoteInput
 
 _anki_wrapper: AnkiWrapper | None = None
 
@@ -81,7 +81,7 @@ def add_note(
     deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] | None = None
 ) -> int | None:
     """Add a new note to the collection."""
-    note: dict[str, Any] = {
+    note: NoteInput = {
         "deckName": deck_name,
         "modelName": model_name,
         "fields": fields,
