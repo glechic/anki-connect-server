@@ -4,6 +4,14 @@ from fastmcp import FastMCP
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import get_config
+from anki_connect_server.tool_metadata import (
+    ADDITIVE_WRITE,
+    DESTRUCTIVE_IDEMPOTENT_WRITE,
+    DESTRUCTIVE_OPEN_WORLD_WRITE,
+    IDEMPOTENT_WRITE,
+    READ_ONLY,
+    SERVER_INSTRUCTIONS,
+)
 from anki_connect_server.types import JsonObject, NoteInput
 
 _anki_wrapper: AnkiWrapper | None = None
@@ -36,47 +44,47 @@ def set_wrapper_for_test(wrapper: AnkiWrapper | None) -> AnkiWrapper | None:
     return previous
 
 
-mcp = FastMCP(name="Anki Connect MCP Server")
+mcp = FastMCP(name="Anki Connect MCP Server", instructions=SERVER_INSTRUCTIONS)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_deck_names() -> list[str]:
     """Get all deck names in the collection."""
     return get_anki_wrapper().deck_names()
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_deck_names_and_ids() -> dict[str, int]:
     """Get all deck names with their IDs."""
     return get_anki_wrapper().deck_names_and_ids()
 
 
-@mcp.tool
+@mcp.tool(annotations=IDEMPOTENT_WRITE)
 def create_deck(deck: str) -> int:
     """Create a new deck with the given name."""
     return get_anki_wrapper().create_deck(deck)
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
 def delete_decks(decks: list[str], cards_too: bool = False) -> bool:
     """Delete one or more decks. Set cardsToo to True to also delete cards."""
     get_anki_wrapper().delete_decks(decks, cards_too)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_model_names() -> list[str]:
     """Get all note model names."""
     return get_anki_wrapper().model_names()
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_model_field_names(model_name: str) -> list[str]:
     """Get all field names for a specific model."""
     return get_anki_wrapper().model_field_names(model_name)
 
 
-@mcp.tool
+@mcp.tool(annotations=ADDITIVE_WRITE)
 def add_note(
     deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] | None = None
 ) -> int | None:
@@ -91,176 +99,176 @@ def add_note(
     return get_anki_wrapper().add_note(cast(JsonObject, note))
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def find_notes(query: str) -> list[int]:
     """Find notes matching the given search query."""
     return get_anki_wrapper().find_notes(query)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_notes_info(notes: list[int]) -> list[JsonObject]:
     """Get detailed information about specific notes."""
     return get_anki_wrapper().notes_info(notes)
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
 def delete_notes(notes: list[int]) -> bool:
     """Delete notes by their IDs."""
     get_anki_wrapper().delete_notes(notes)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def find_cards(query: str) -> list[int]:
     """Find cards matching the given search query."""
     return get_anki_wrapper().find_cards(query)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_cards_info(cards: list[int]) -> list[JsonObject]:
     """Get detailed information about specific cards."""
     return get_anki_wrapper().cards_info(cards)
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
 def suspend_cards(cards: list[int]) -> bool:
     """Suspend one or more cards."""
     return get_anki_wrapper().suspend(cards)
 
 
-@mcp.tool
+@mcp.tool(annotations=IDEMPOTENT_WRITE)
 def unsuspend_cards(cards: list[int]) -> bool:
     """Unsuspend one or more cards."""
     return get_anki_wrapper().unsuspend(cards)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def are_suspended(cards: list[int]) -> list[bool]:
     """Check if cards are suspended."""
     return get_anki_wrapper().are_suspended(cards)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def are_due(cards: list[int]) -> list[bool]:
     """Check if cards are due for review."""
     return get_anki_wrapper().are_due(cards)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_card_intervals(cards: list[int], complete: bool = False) -> list[Any]:
     """Get intervals for cards."""
     return get_anki_wrapper().get_intervals(cards, complete)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_all_tags() -> list[str]:
     """Get all tags in the collection."""
     return get_anki_wrapper().get_tags()
 
 
-@mcp.tool
+@mcp.tool(annotations=IDEMPOTENT_WRITE)
 def add_tags(notes: list[int], tags: str) -> bool:
     """Add tags to notes."""
     get_anki_wrapper().add_tags(notes, tags)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
 def remove_tags(notes: list[int], tags: str) -> bool:
     """Remove tags from notes."""
     get_anki_wrapper().remove_tags(notes, tags)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_media_dir_path() -> str:
     """Get the path to the media directory."""
     return get_anki_wrapper().get_media_dir_path()
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
 def change_deck(cards: list[int], deck: str) -> bool:
     """Move cards to a different deck."""
     get_anki_wrapper().change_deck(cards, deck)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def cards_to_notes(cards: list[int]) -> list[int]:
     """Convert card IDs to note IDs."""
     return get_anki_wrapper().cards_to_notes(cards)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_deck_config(deck: str) -> JsonObject:
     """Get deck configuration."""
     return get_anki_wrapper().get_deck_config(deck)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_model_templates(model_name: str) -> dict[str, dict[str, str]]:
     """Get card templates for a model."""
     return get_anki_wrapper().model_templates(model_name)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_model_styling(model_name: str) -> JsonObject:
     """Get CSS styling for a model."""
     return get_anki_wrapper().model_styling(model_name)
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_api_version() -> int:
     """Get the AnkiConnect API version."""
     return 6
 
 
-@mcp.tool
+@mcp.tool(annotations=IDEMPOTENT_WRITE)
 def store_media_file(filename: str, data: str) -> bool:
     """Store a media file."""
     get_anki_wrapper().store_media_file(filename, data)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def retrieve_media_file(filename: str) -> str | None:
     """Retrieve a media file."""
     return get_anki_wrapper().retrieve_media_file(filename)
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
 def delete_media_file(filename: str) -> bool:
     """Delete a media file."""
     get_anki_wrapper().delete_media_file(filename)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
 def import_package(path: str) -> JsonObject:
     """Import an .apkg file."""
     return get_anki_wrapper().import_package(path)
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
 def export_package(deck: str, path: str, include_sched: bool = False) -> bool:
     """Export a deck to an .apkg file."""
     get_anki_wrapper().export_package(deck, path, include_sched)
     return True
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
 def sync() -> str:
     """Sync collection with AnkiWeb."""
     return get_anki_wrapper().sync_to_ankiweb()
 
 
-@mcp.tool
+@mcp.tool(annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
 def sync_media() -> str:
     """Sync only media files with AnkiWeb."""
     return get_anki_wrapper().sync_media_only()
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def get_sync_status() -> JsonObject:
     """Get sync status from AnkiWeb."""
     return get_anki_wrapper().sync_status()
