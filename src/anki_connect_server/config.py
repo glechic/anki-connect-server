@@ -25,8 +25,6 @@ class Config(BaseSettings):
 
     ANKIWEB_URL: str | None = None
 
-    FULL_UPLOAD: bool = False
-
     @field_validator("COLLECTION_PATH")
     @classmethod
     def _validate_collection_path(cls, v: str) -> str:

@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.sync import MediaSyncResult, SyncResult
 from anki_connect_server.types import (
     AddNoteParams,
     AddNotesParams,
@@ -75,7 +76,7 @@ async def handle_version(wrapper: AnkiWrapper, params: EmptyParams) -> int:
     return API_VERSION
 
 
-async def handle_sync(wrapper: AnkiWrapper, params: CredentialsParams) -> str:
+async def handle_sync(wrapper: AnkiWrapper, params: CredentialsParams) -> SyncResult:
     return await _run(wrapper.sync_to_ankiweb, params.username, params.password, params.endpoint)
 
 
@@ -88,7 +89,7 @@ async def handle_sync_status(wrapper: AnkiWrapper, params: CredentialsParams) ->
     )
 
 
-async def handle_sync_media(wrapper: AnkiWrapper, params: CredentialsParams) -> str:
+async def handle_sync_media(wrapper: AnkiWrapper, params: CredentialsParams) -> MediaSyncResult:
     return await _run(wrapper.sync_media_only, params.username, params.password, params.endpoint)
 
 

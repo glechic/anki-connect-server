@@ -4,6 +4,7 @@ from fastmcp import FastMCP
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import get_config
+from anki_connect_server.sync import MediaSyncResult, SyncResult
 from anki_connect_server.tool_metadata import (
     ADDITIVE_WRITE,
     DESTRUCTIVE_IDEMPOTENT_WRITE,
@@ -257,14 +258,21 @@ def export_package(deck: str, path: str, include_sched: bool = False) -> bool:
 
 
 @mcp.tool(annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
-def sync() -> str:
-    """Sync collection with AnkiWeb."""
+def sync() -> SyncResult:
+    """Sync collection with AnkiWeb.
+
+    Returns a structured SyncResult describing the collection outcome
+    (no_changes / merged / downloaded), the download reason if any, the
+    media sync counters, and any server message. Full uploads are never
+    performed: if AnkiWeb is empty and requests a full upload, the call
+    raises instead of replacing remote data.
+    """
     return get_anki_wrapper().sync_to_ankiweb()
 
 
 @mcp.tool(annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
-def sync_media() -> str:
-    """Sync only media files with AnkiWeb."""
+def sync_media() -> MediaSyncResult:
+    """Sync only media files with AnkiWeb (not the collection)."""
     return get_anki_wrapper().sync_media_only()
 
 

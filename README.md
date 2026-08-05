@@ -37,13 +37,12 @@ Set environment variables before running the server:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
+| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `127.0.0.1` | Bind address (use `0.0.0.0` for external access) |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (required for sync) |
 | `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (required for sync) |
-| `ANKIWEB_URL` | No | - | Custom sync server URL (optional) |
-| `ANKICONNECT_FULL_UPLOAD` | No | `false` | Allow full upload on sync conflict |
+| `ANKICONNECT_ANKIWEB_URL` | No | - | Custom sync server URL (optional) |
 
 ### Example `.env` File
 
