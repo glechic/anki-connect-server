@@ -1,113 +1,54 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
+
+from pydantic import BaseModel, ValidationError
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.types import (
-    CardTemplateInput,
+    AddNoteParams,
+    AddNotesParams,
+    AddTagsParams,
+    CardsIdsParams,
+    ChangeDeckParams,
+    CloneDeckConfigIdParams,
+    CreateDeckParams,
+    CreateModelParams,
+    CredentialsParams,
+    DeleteDecksParams,
+    EmptyParams,
+    ExportPackageParams,
+    FilenameParams,
+    FindCardsParams,
+    FindNotesParams,
+    GetDeckConfigParams,
+    GetDecksParams,
+    GetIntervalsParams,
+    ImportPackageParams,
     JsonObject,
-    ModelStylingUpdate,
-    ModelTemplateUpdate,
-    NoteInput,
+    ModelNameParams,
+    ModelStylingUpdateParams,
+    ModelTemplateUpdateParams,
+    MultiParams,
+    NotesIdsParams,
+    RemoveDeckConfigIdParams,
+    SaveDeckConfigParams,
+    SetDeckConfigIdParams,
+    StoreMediaFileParams,
+    UpdateNoteFieldsParams,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class ValidationError(ValueError):
-    pass
+class ActionError(ValueError):
+    """Raised for client-facing action errors (unknown action, bad params)."""
 
 
-# A handler takes (wrapper, params) and returns a JSON-serialisable value or
-# coroutine resolving to one. The return is Any because handlers return a wide
-# variety of concrete types (int, str, list[int], dict[str, JsonObject], None,
-# etc.) and the protocol would otherwise need a union of dozens of overloads.
-type Handler = Callable[[AnkiWrapper, JsonObject], Awaitable[Any] | Any]
-
-
-def require_params(params: JsonObject, *required_keys: str) -> None:
-    missing = [k for k in required_keys if k not in params or params[k] is None]
-    if missing:
-        raise ValidationError(f"Missing required parameters: {', '.join(missing)}")
-
-
-def _get_str(params: JsonObject, key: str, default: str = "") -> str:
-    value = params.get(key, default)
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return default
-    return str(value)
-
-
-def _get_bool(params: JsonObject, key: str, default: bool = False) -> bool:
-    value = params.get(key, default)
-    if isinstance(value, bool):
-        return value
-    return default
-
-
-def _get_int(params: JsonObject, key: str, default: int = 0) -> int:
-    value = params.get(key, default)
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return default
-
-
-def _get_int_list(params: JsonObject, key: str) -> list[int]:
-    value = params.get(key, [])
-    if not isinstance(value, list):
-        return []
-    result: list[int] = []
-    for item in value:
-        if isinstance(item, int) and not isinstance(item, bool):
-            result.append(item)
-        elif isinstance(item, float) and item.is_integer():
-            result.append(int(item))
-    return result
-
-
-def _get_str_list(params: JsonObject, key: str) -> list[str]:
-    value = params.get(key, [])
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _get_optional_str(params: JsonObject, key: str) -> str | None:
-    value = params.get(key)
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    return str(value)
-
-
-def _get_obj(params: JsonObject, key: str) -> JsonObject:
-    value = params.get(key, {})
-    if isinstance(value, dict):
-        return value
-    return {}
-
-
-def _require_typed(params: JsonObject, key: str, required: tuple[str, ...]) -> JsonObject:
-    """Extract a JsonObject and validate it has the required keys.
-
-    TypedDicts can't be checked with isinstance at runtime; we validate the
-    presence of required keys instead. The caller casts the returned
-    JsonObject to the specific TypedDict shape.
-    """
-    require_params(params, key)
-    value = params.get(key, {})
-    if not isinstance(value, dict):
-        raise ValidationError(f"{key} must be a dictionary")
-    missing = [k for k in required if k not in value or value[k] is None]
-    if missing:
-        raise ValidationError(f"Missing required fields in {key}: {', '.join(missing)}")
-    return value
+# A handler takes (wrapper, validated_params) and returns a JSON-serialisable
+# value or coroutine resolving to one.
+type Handler[P: BaseModel] = Callable[[AnkiWrapper, P], Awaitable[Any] | Any]
 
 
 async def _run[R](func: Callable[..., R], *args: object, **kwargs: object) -> R:
@@ -124,321 +65,254 @@ async def _run[R](func: Callable[..., R], *args: object, **kwargs: object) -> R:
 API_VERSION = 6
 
 
-async def handle_version(wrapper: AnkiWrapper, params: JsonObject) -> int:
+# ---------------------------------------------------------------------------
+# Handlers. Each handler receives an already-validated pydantic model.
+# ---------------------------------------------------------------------------
+
+
+async def handle_version(wrapper: AnkiWrapper, params: EmptyParams) -> int:
     _ = (wrapper, params)
     return API_VERSION
 
 
-async def handle_sync(wrapper: AnkiWrapper, params: JsonObject) -> str:
-    endpoint = _get_optional_str(params, "endpoint")
-    username = _get_optional_str(params, "username")
-    password = _get_optional_str(params, "password")
-    return await _run(wrapper.sync_to_ankiweb, username, password, endpoint)
+async def handle_sync(wrapper: AnkiWrapper, params: CredentialsParams) -> str:
+    return await _run(wrapper.sync_to_ankiweb, params.username, params.password, params.endpoint)
 
 
-async def handle_sync_status(wrapper: AnkiWrapper, params: JsonObject) -> JsonObject:
-    endpoint = _get_optional_str(params, "endpoint")
-    username = _get_optional_str(params, "username")
-    password = _get_optional_str(params, "password")
-    return await _run(wrapper.sync_status, username=username, password=password, endpoint=endpoint)
+async def handle_sync_status(wrapper: AnkiWrapper, params: CredentialsParams) -> JsonObject:
+    return await _run(
+        wrapper.sync_status,
+        username=params.username,
+        password=params.password,
+        endpoint=params.endpoint,
+    )
 
 
-async def handle_sync_media(wrapper: AnkiWrapper, params: JsonObject) -> str:
-    endpoint = _get_optional_str(params, "endpoint")
-    username = _get_optional_str(params, "username")
-    password = _get_optional_str(params, "password")
-    return await _run(wrapper.sync_media_only, username, password, endpoint)
+async def handle_sync_media(wrapper: AnkiWrapper, params: CredentialsParams) -> str:
+    return await _run(wrapper.sync_media_only, params.username, params.password, params.endpoint)
 
 
-async def handle_deck_names(wrapper: AnkiWrapper, params: JsonObject) -> list[str]:
+async def handle_deck_names(wrapper: AnkiWrapper, params: EmptyParams) -> list[str]:
     _ = (wrapper, params)
     return await _run(wrapper.deck_names)
 
 
-async def handle_deck_names_and_ids(wrapper: AnkiWrapper, params: JsonObject) -> dict[str, int]:
+async def handle_deck_names_and_ids(wrapper: AnkiWrapper, params: EmptyParams) -> dict[str, int]:
     _ = (wrapper, params)
     return await _run(wrapper.deck_names_and_ids)
 
 
-async def handle_get_decks(wrapper: AnkiWrapper, params: JsonObject) -> dict[str, list[int]]:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.get_decks, cards)
+async def handle_get_decks(wrapper: AnkiWrapper, params: GetDecksParams) -> dict[str, list[int]]:
+    return await _run(wrapper.get_decks, params.cards)
 
 
-async def handle_create_deck(wrapper: AnkiWrapper, params: JsonObject) -> int:
-    require_params(params, "deck")
-    deck = _get_str(params, "deck")
-    if not deck:
-        raise ValidationError("Deck name cannot be empty")
-    return await _run(wrapper.create_deck, deck)
+async def handle_create_deck(wrapper: AnkiWrapper, params: CreateDeckParams) -> int:
+    if not params.deck:
+        raise ActionError("Deck name cannot be empty")
+    return await _run(wrapper.create_deck, params.deck)
 
 
-async def handle_change_deck(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    cards = _get_int_list(params, "cards")
-    deck = _get_str(params, "deck")
-    await _run(wrapper.change_deck, cards, deck)
+async def handle_change_deck(wrapper: AnkiWrapper, params: ChangeDeckParams) -> None:
+    await _run(wrapper.change_deck, params.cards, params.deck)
 
 
-async def handle_delete_decks(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    decks = _get_str_list(params, "decks")
-    cards_too = _get_bool(params, "cardsToo")
-    await _run(wrapper.delete_decks, decks, cards_too)
+async def handle_delete_decks(wrapper: AnkiWrapper, params: DeleteDecksParams) -> None:
+    await _run(wrapper.delete_decks, params.decks, params.cardsToo)
 
 
-async def handle_get_deck_config(wrapper: AnkiWrapper, params: JsonObject) -> JsonObject:
-    deck = _get_str(params, "deck")
-    return await _run(wrapper.get_deck_config, deck)
+async def handle_get_deck_config(wrapper: AnkiWrapper, params: GetDeckConfigParams) -> JsonObject:
+    return await _run(wrapper.get_deck_config, params.deck)
 
 
-async def handle_save_deck_config(wrapper: AnkiWrapper, params: JsonObject) -> bool:
-    config = _get_obj(params, "config")
-    return await _run(wrapper.save_deck_config, config)
+async def handle_save_deck_config(wrapper: AnkiWrapper, params: SaveDeckConfigParams) -> bool:
+    return await _run(wrapper.save_deck_config, params.config)
 
 
-async def handle_set_deck_config_id(wrapper: AnkiWrapper, params: JsonObject) -> bool:
-    decks = _get_str_list(params, "decks")
-    config_id = _get_int(params, "configId", 1)
-    return await _run(wrapper.set_deck_config_id, decks, config_id)
+async def handle_set_deck_config_id(wrapper: AnkiWrapper, params: SetDeckConfigIdParams) -> bool:
+    return await _run(wrapper.set_deck_config_id, params.decks, params.configId)
 
 
-async def handle_clone_deck_config_id(wrapper: AnkiWrapper, params: JsonObject) -> int:
-    name = _get_str(params, "name")
-    clone_from = _get_int(params, "cloneFrom", 1)
-    return await _run(wrapper.clone_deck_config_id, name, clone_from)
+async def handle_clone_deck_config_id(wrapper: AnkiWrapper, params: CloneDeckConfigIdParams) -> int:
+    return await _run(wrapper.clone_deck_config_id, params.name, params.cloneFrom)
 
 
-async def handle_remove_deck_config_id(wrapper: AnkiWrapper, params: JsonObject) -> bool:
-    config_id = _get_int(params, "configId", 1)
-    return await _run(wrapper.remove_deck_config_id, config_id)
+async def handle_remove_deck_config_id(
+    wrapper: AnkiWrapper, params: RemoveDeckConfigIdParams
+) -> bool:
+    return await _run(wrapper.remove_deck_config_id, params.configId)
 
 
-async def handle_model_names(wrapper: AnkiWrapper, params: JsonObject) -> list[str]:
+async def handle_model_names(wrapper: AnkiWrapper, params: EmptyParams) -> list[str]:
     _ = (wrapper, params)
     return await _run(wrapper.model_names)
 
 
-async def handle_model_names_and_ids(wrapper: AnkiWrapper, params: JsonObject) -> dict[str, int]:
+async def handle_model_names_and_ids(wrapper: AnkiWrapper, params: EmptyParams) -> dict[str, int]:
     _ = (wrapper, params)
     return await _run(wrapper.model_names_and_ids)
 
 
-async def handle_model_field_names(wrapper: AnkiWrapper, params: JsonObject) -> list[str]:
-    model_name = _get_str(params, "modelName")
-    return await _run(wrapper.model_field_names, model_name)
+async def handle_model_field_names(wrapper: AnkiWrapper, params: ModelNameParams) -> list[str]:
+    return await _run(wrapper.model_field_names, params.modelName)
 
 
-async def handle_model_fields_on_templates(wrapper: AnkiWrapper, params: JsonObject) -> Any:
-    model_name = _get_str(params, "modelName")
-    return await _run(wrapper.model_fields_on_templates, model_name)
+async def handle_model_fields_on_templates(wrapper: AnkiWrapper, params: ModelNameParams) -> Any:
+    return await _run(wrapper.model_fields_on_templates, params.modelName)
 
 
-async def handle_create_model(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    model_name = _get_str(params, "modelName")
-    in_order_fields = _get_str_list(params, "inOrderFields")
-    raw_templates = params.get("cardTemplates", [])
-    card_templates: list[CardTemplateInput] = []
-    if isinstance(raw_templates, list):
-        card_templates.extend(
-            {
-                "Name": str(tmpl.get("Name", "")),
-                "Front": str(tmpl.get("Front", "")),
-                "Back": str(tmpl.get("Back", "")),
-            }
-            for tmpl in raw_templates
-            if isinstance(tmpl, dict)
-        )
-    css = _get_str(params, "css")
-    is_cloze = _get_bool(params, "isCloze")
-    await _run(wrapper.create_model, model_name, in_order_fields, card_templates, css, is_cloze)
-
-
-async def handle_model_templates(wrapper: AnkiWrapper, params: JsonObject) -> Any:
-    model_name = _get_str(params, "modelName")
-    return await _run(wrapper.model_templates, model_name)
-
-
-async def handle_model_styling(wrapper: AnkiWrapper, params: JsonObject) -> JsonObject:
-    model_name = _get_str(params, "modelName")
-    return await _run(wrapper.model_styling, model_name)
-
-
-async def handle_update_model_templates(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    model = cast(
-        ModelTemplateUpdate,
-        _require_typed(params, "model", ("name", "templates")),
+async def handle_create_model(wrapper: AnkiWrapper, params: CreateModelParams) -> None:
+    await _run(
+        wrapper.create_model,
+        params.modelName,
+        params.inOrderFields,
+        params.cardTemplates,
+        params.css,
+        params.isCloze,
     )
-    await _run(wrapper.update_model_templates, model)
 
 
-async def handle_update_model_styling(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    model = cast(
-        ModelStylingUpdate,
-        _require_typed(params, "model", ("name", "css")),
-    )
-    await _run(wrapper.update_model_styling, model)
+async def handle_model_templates(wrapper: AnkiWrapper, params: ModelNameParams) -> Any:
+    return await _run(wrapper.model_templates, params.modelName)
 
 
-async def handle_add_note(wrapper: AnkiWrapper, params: JsonObject) -> int | None:
-    note = cast(
-        NoteInput,
-        _require_typed(params, "note", ("deckName", "modelName", "fields")),
-    )
-    return await _run(wrapper.add_note, note)
+async def handle_model_styling(wrapper: AnkiWrapper, params: ModelNameParams) -> JsonObject:
+    return await _run(wrapper.model_styling, params.modelName)
 
 
-async def handle_add_notes(wrapper: AnkiWrapper, params: JsonObject) -> list[int | None]:
-    require_params(params, "notes")
-    notes = params.get("notes", [])
-    if not isinstance(notes, list):
-        raise ValidationError("notes must be a list")
-    typed_notes: list[NoteInput] = [cast(NoteInput, n) for n in notes if isinstance(n, dict)]
-    return await _run(wrapper.add_notes, typed_notes)
+async def handle_update_model_templates(
+    wrapper: AnkiWrapper, params: ModelTemplateUpdateParams
+) -> None:
+    await _run(wrapper.update_model_templates, params.model)
 
 
-async def handle_can_add_notes(wrapper: AnkiWrapper, params: JsonObject) -> list[bool]:
-    require_params(params, "notes")
-    notes = params.get("notes", [])
-    if not isinstance(notes, list):
-        raise ValidationError("notes must be a list")
-    typed_notes: list[NoteInput] = [cast(NoteInput, n) for n in notes if isinstance(n, dict)]
-    return await _run(wrapper.can_add_notes, typed_notes)
+async def handle_update_model_styling(
+    wrapper: AnkiWrapper, params: ModelStylingUpdateParams
+) -> None:
+    await _run(wrapper.update_model_styling, params.model)
 
 
-async def handle_update_note_fields(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    require_params(params, "note")
-    note = params.get("note", {})
-    if not isinstance(note, dict):
-        raise ValidationError("note must be a dictionary")
-    await _run(wrapper.update_note_fields, note)
+async def handle_add_note(wrapper: AnkiWrapper, params: AddNoteParams) -> int | None:
+    return await _run(wrapper.add_note, params.note)
 
 
-async def handle_add_tags(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    notes = _get_int_list(params, "notes")
-    tags = _get_str(params, "tags")
-    await _run(wrapper.add_tags, notes, tags)
+async def handle_add_notes(wrapper: AnkiWrapper, params: AddNotesParams) -> list[int | None]:
+    return await _run(wrapper.add_notes, params.notes)
 
 
-async def handle_remove_tags(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    notes = _get_int_list(params, "notes")
-    tags = _get_str(params, "tags")
-    await _run(wrapper.remove_tags, notes, tags)
+async def handle_can_add_notes(wrapper: AnkiWrapper, params: AddNotesParams) -> list[bool]:
+    return await _run(wrapper.can_add_notes, params.notes)
 
 
-async def handle_get_tags(wrapper: AnkiWrapper, params: JsonObject) -> list[str]:
+async def handle_update_note_fields(wrapper: AnkiWrapper, params: UpdateNoteFieldsParams) -> None:
+    await _run(wrapper.update_note_fields, params.note.model_dump())
+
+
+async def handle_add_tags(wrapper: AnkiWrapper, params: AddTagsParams) -> None:
+    await _run(wrapper.add_tags, params.notes, params.tags)
+
+
+async def handle_remove_tags(wrapper: AnkiWrapper, params: AddTagsParams) -> None:
+    await _run(wrapper.remove_tags, params.notes, params.tags)
+
+
+async def handle_get_tags(wrapper: AnkiWrapper, params: EmptyParams) -> list[str]:
     _ = (wrapper, params)
     return await _run(wrapper.get_tags)
 
 
-async def handle_find_notes(wrapper: AnkiWrapper, params: JsonObject) -> list[int]:
-    require_params(params, "query")
-    query = _get_str(params, "query")
-    return await _run(wrapper.find_notes, query)
+async def handle_find_notes(wrapper: AnkiWrapper, params: FindNotesParams) -> list[int]:
+    return await _run(wrapper.find_notes, params.query)
 
 
-async def handle_notes_info(wrapper: AnkiWrapper, params: JsonObject) -> list[JsonObject]:
-    notes = _get_int_list(params, "notes")
-    return await _run(wrapper.notes_info, notes)
+async def handle_notes_info(wrapper: AnkiWrapper, params: NotesIdsParams) -> list[JsonObject]:
+    return await _run(wrapper.notes_info, params.notes)
 
 
-async def handle_delete_notes(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    notes = _get_int_list(params, "notes")
-    await _run(wrapper.delete_notes, notes)
+async def handle_delete_notes(wrapper: AnkiWrapper, params: NotesIdsParams) -> None:
+    await _run(wrapper.delete_notes, params.notes)
 
 
-async def handle_find_cards(wrapper: AnkiWrapper, params: JsonObject) -> list[int]:
-    require_params(params, "query")
-    query = _get_str(params, "query")
-    return await _run(wrapper.find_cards, query)
+async def handle_find_cards(wrapper: AnkiWrapper, params: FindCardsParams) -> list[int]:
+    return await _run(wrapper.find_cards, params.query)
 
 
-async def handle_cards_to_notes(wrapper: AnkiWrapper, params: JsonObject) -> list[int]:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.cards_to_notes, cards)
+async def handle_cards_to_notes(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[int]:
+    return await _run(wrapper.cards_to_notes, params.cards)
 
 
-async def handle_cards_info(wrapper: AnkiWrapper, params: JsonObject) -> list[JsonObject]:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.cards_info, cards)
+async def handle_cards_info(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[JsonObject]:
+    return await _run(wrapper.cards_info, params.cards)
 
 
-async def handle_suspend(wrapper: AnkiWrapper, params: JsonObject) -> bool:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.suspend, cards)
+async def handle_suspend(wrapper: AnkiWrapper, params: CardsIdsParams) -> bool:
+    return await _run(wrapper.suspend, params.cards)
 
 
-async def handle_unsuspend(wrapper: AnkiWrapper, params: JsonObject) -> bool:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.unsuspend, cards)
+async def handle_unsuspend(wrapper: AnkiWrapper, params: CardsIdsParams) -> bool:
+    return await _run(wrapper.unsuspend, params.cards)
 
 
-async def handle_are_suspended(wrapper: AnkiWrapper, params: JsonObject) -> list[bool]:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.are_suspended, cards)
+async def handle_are_suspended(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[bool]:
+    return await _run(wrapper.are_suspended, params.cards)
 
 
-async def handle_are_due(wrapper: AnkiWrapper, params: JsonObject) -> list[bool]:
-    cards = _get_int_list(params, "cards")
-    return await _run(wrapper.are_due, cards)
+async def handle_are_due(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[bool]:
+    return await _run(wrapper.are_due, params.cards)
 
 
-async def handle_get_intervals(wrapper: AnkiWrapper, params: JsonObject) -> list[Any]:
-    cards = _get_int_list(params, "cards")
-    complete = _get_bool(params, "complete")
-    return await _run(wrapper.get_intervals, cards, complete)
+async def handle_get_intervals(wrapper: AnkiWrapper, params: GetIntervalsParams) -> list[Any]:
+    return await _run(wrapper.get_intervals, params.cards, params.complete)
 
 
-async def handle_get_media_dir_path(wrapper: AnkiWrapper, params: JsonObject) -> str:
+async def handle_get_media_dir_path(wrapper: AnkiWrapper, params: EmptyParams) -> str:
     _ = (wrapper, params)
     return await _run(wrapper.get_media_dir_path)
 
 
-async def handle_store_media_file(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    filename = _get_str(params, "filename")
-    data = _get_str(params, "data")
-    await _run(wrapper.store_media_file, filename, data)
+async def handle_store_media_file(wrapper: AnkiWrapper, params: StoreMediaFileParams) -> None:
+    await _run(wrapper.store_media_file, params.filename, params.data)
 
 
-async def handle_retrieve_media_file(wrapper: AnkiWrapper, params: JsonObject) -> str | None:
-    filename = _get_str(params, "filename")
-    return await _run(wrapper.retrieve_media_file, filename)
+async def handle_retrieve_media_file(wrapper: AnkiWrapper, params: FilenameParams) -> str | None:
+    return await _run(wrapper.retrieve_media_file, params.filename)
 
 
-async def handle_delete_media_file(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    filename = _get_str(params, "filename")
-    await _run(wrapper.delete_media_file, filename)
+async def handle_delete_media_file(wrapper: AnkiWrapper, params: FilenameParams) -> None:
+    await _run(wrapper.delete_media_file, params.filename)
 
 
-async def handle_import_package(wrapper: AnkiWrapper, params: JsonObject) -> JsonObject:
-    path = _get_str(params, "path")
-    return await _run(wrapper.import_package, path)
+async def handle_import_package(wrapper: AnkiWrapper, params: ImportPackageParams) -> JsonObject:
+    return await _run(wrapper.import_package, params.path)
 
 
-async def handle_export_package(wrapper: AnkiWrapper, params: JsonObject) -> None:
-    deck = _get_str(params, "deck")
-    path = _get_str(params, "path")
-    include_sched = _get_bool(params, "includeSched")
-    await _run(wrapper.export_package, deck, path, include_sched)
+async def handle_export_package(wrapper: AnkiWrapper, params: ExportPackageParams) -> None:
+    await _run(wrapper.export_package, params.deck, params.path, params.includeSched)
 
 
-async def handle_multi(wrapper: AnkiWrapper, params: JsonObject) -> list[Any]:
-    actions = params.get("actions", [])
-    if not isinstance(actions, list):
-        raise ValidationError("actions must be a list")
+async def handle_multi(wrapper: AnkiWrapper, params: MultiParams) -> list[Any]:
     results: list[Any] = []
-    for action in actions:
+    for action in params.actions:
         if not isinstance(action, dict):
             results.append(
                 {"error": f"Invalid action: expected object, got {type(action).__name__}"}
             )
             continue
-        action_name = _get_str(action, "action")
-        action_params = _get_obj(action, "params")
-        handler = ACTION_HANDLERS.get(action_name)
-        if not handler:
+        action_name = action.get("action", "")
+        if not isinstance(action_name, str):
+            results.append({"error": "Invalid action: 'action' must be a string"})
+            continue
+        entry = ACTION_HANDLERS.get(action_name)
+        if not entry:
             results.append({"error": f"Unknown action: {action_name}"})
             continue
+        model_cls, handler = entry
+        action_params = action.get("params", {})
+        if not isinstance(action_params, dict):
+            results.append({"error": f"Invalid params for {action_name}: expected object"})
+            continue
         try:
-            result = handler(wrapper, action_params)
+            validated = model_cls(**action_params)
+            result = handler(wrapper, validated)
             if asyncio.iscoroutine(result):
                 result = await result
             results.append(result)
@@ -449,69 +323,72 @@ async def handle_multi(wrapper: AnkiWrapper, params: JsonObject) -> list[Any]:
     return results
 
 
-ACTION_HANDLERS: dict[str, Handler] = {
-    "version": handle_version,
-    "sync": handle_sync,
-    "syncStatus": handle_sync_status,
-    "syncMedia": handle_sync_media,
-    "deckNames": handle_deck_names,
-    "deckNamesAndIds": handle_deck_names_and_ids,
-    "getDecks": handle_get_decks,
-    "createDeck": handle_create_deck,
-    "changeDeck": handle_change_deck,
-    "deleteDecks": handle_delete_decks,
-    "getDeckConfig": handle_get_deck_config,
-    "saveDeckConfig": handle_save_deck_config,
-    "setDeckConfigId": handle_set_deck_config_id,
-    "cloneDeckConfigId": handle_clone_deck_config_id,
-    "removeDeckConfigId": handle_remove_deck_config_id,
-    "modelNames": handle_model_names,
-    "modelNamesAndIds": handle_model_names_and_ids,
-    "modelFieldNames": handle_model_field_names,
-    "modelFieldsOnTemplates": handle_model_fields_on_templates,
-    "createModel": handle_create_model,
-    "modelTemplates": handle_model_templates,
-    "modelStyling": handle_model_styling,
-    "updateModelTemplates": handle_update_model_templates,
-    "updateModelStyling": handle_update_model_styling,
-    "addNote": handle_add_note,
-    "addNotes": handle_add_notes,
-    "canAddNotes": handle_can_add_notes,
-    "updateNoteFields": handle_update_note_fields,
-    "addTags": handle_add_tags,
-    "removeTags": handle_remove_tags,
-    "getTags": handle_get_tags,
-    "findNotes": handle_find_notes,
-    "notesInfo": handle_notes_info,
-    "deleteNotes": handle_delete_notes,
-    "findCards": handle_find_cards,
-    "cardsToNotes": handle_cards_to_notes,
-    "cardsInfo": handle_cards_info,
-    "suspend": handle_suspend,
-    "unsuspend": handle_unsuspend,
-    "areSuspended": handle_are_suspended,
-    "areDue": handle_are_due,
-    "getIntervals": handle_get_intervals,
-    "getMediaDirPath": handle_get_media_dir_path,
-    "storeMediaFile": handle_store_media_file,
-    "retrieveMediaFile": handle_retrieve_media_file,
-    "deleteMediaFile": handle_delete_media_file,
-    "importPackage": handle_import_package,
-    "exportPackage": handle_export_package,
-    "multi": handle_multi,
+# Registry mapping AnkiConnect action names to (pydantic param model, handler).
+ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
+    "version": (EmptyParams, handle_version),
+    "sync": (CredentialsParams, handle_sync),
+    "syncStatus": (CredentialsParams, handle_sync_status),
+    "syncMedia": (CredentialsParams, handle_sync_media),
+    "deckNames": (EmptyParams, handle_deck_names),
+    "deckNamesAndIds": (EmptyParams, handle_deck_names_and_ids),
+    "getDecks": (GetDecksParams, handle_get_decks),
+    "createDeck": (CreateDeckParams, handle_create_deck),
+    "changeDeck": (ChangeDeckParams, handle_change_deck),
+    "deleteDecks": (DeleteDecksParams, handle_delete_decks),
+    "getDeckConfig": (GetDeckConfigParams, handle_get_deck_config),
+    "saveDeckConfig": (SaveDeckConfigParams, handle_save_deck_config),
+    "setDeckConfigId": (SetDeckConfigIdParams, handle_set_deck_config_id),
+    "cloneDeckConfigId": (CloneDeckConfigIdParams, handle_clone_deck_config_id),
+    "removeDeckConfigId": (RemoveDeckConfigIdParams, handle_remove_deck_config_id),
+    "modelNames": (EmptyParams, handle_model_names),
+    "modelNamesAndIds": (EmptyParams, handle_model_names_and_ids),
+    "modelFieldNames": (ModelNameParams, handle_model_field_names),
+    "modelFieldsOnTemplates": (ModelNameParams, handle_model_fields_on_templates),
+    "createModel": (CreateModelParams, handle_create_model),
+    "modelTemplates": (ModelNameParams, handle_model_templates),
+    "modelStyling": (ModelNameParams, handle_model_styling),
+    "updateModelTemplates": (ModelTemplateUpdateParams, handle_update_model_templates),
+    "updateModelStyling": (ModelStylingUpdateParams, handle_update_model_styling),
+    "addNote": (AddNoteParams, handle_add_note),
+    "addNotes": (AddNotesParams, handle_add_notes),
+    "canAddNotes": (AddNotesParams, handle_can_add_notes),
+    "updateNoteFields": (UpdateNoteFieldsParams, handle_update_note_fields),
+    "addTags": (AddTagsParams, handle_add_tags),
+    "removeTags": (AddTagsParams, handle_remove_tags),
+    "getTags": (EmptyParams, handle_get_tags),
+    "findNotes": (FindNotesParams, handle_find_notes),
+    "notesInfo": (NotesIdsParams, handle_notes_info),
+    "deleteNotes": (NotesIdsParams, handle_delete_notes),
+    "findCards": (FindCardsParams, handle_find_cards),
+    "cardsToNotes": (CardsIdsParams, handle_cards_to_notes),
+    "cardsInfo": (CardsIdsParams, handle_cards_info),
+    "suspend": (CardsIdsParams, handle_suspend),
+    "unsuspend": (CardsIdsParams, handle_unsuspend),
+    "areSuspended": (CardsIdsParams, handle_are_suspended),
+    "areDue": (CardsIdsParams, handle_are_due),
+    "getIntervals": (GetIntervalsParams, handle_get_intervals),
+    "getMediaDirPath": (EmptyParams, handle_get_media_dir_path),
+    "storeMediaFile": (StoreMediaFileParams, handle_store_media_file),
+    "retrieveMediaFile": (FilenameParams, handle_retrieve_media_file),
+    "deleteMediaFile": (FilenameParams, handle_delete_media_file),
+    "importPackage": (ImportPackageParams, handle_import_package),
+    "exportPackage": (ExportPackageParams, handle_export_package),
+    "multi": (MultiParams, handle_multi),
 }
 
 
 async def dispatch(action: str, params: JsonObject, wrapper: AnkiWrapper) -> Any:
-    handler = ACTION_HANDLERS.get(action)
-    if not handler:
+    entry = ACTION_HANDLERS.get(action)
+    if not entry:
         logger.warning(f"Unsupported action requested: {action}")
         raise ValueError(f"Unsupported action: {action}")
+    model_cls, handler = entry
     try:
-        result = handler(wrapper, params)
-        if asyncio.iscoroutine(result):
-            result = await result
-        return result
+        validated = model_cls(**params)
     except ValidationError as e:
         logger.warning(f"Validation error in {action}: {e}")
         raise ValueError(str(e)) from e
+    result = handler(wrapper, validated)
+    if asyncio.iscoroutine(result):
+        result = await result
+    return result
