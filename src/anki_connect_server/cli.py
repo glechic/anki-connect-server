@@ -12,10 +12,18 @@ def main(argv: list[str] | None = None) -> None:
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # API server subcommand
-    subparsers.add_parser("api", help="Run the AnkiConnect API server")
+    subparsers.add_parser(
+        "api",
+        help="Run the AnkiConnect API server",
+        description="Run the headless AnkiConnect-compatible REST API server.",
+    )
 
     # MCP server subcommand
-    subparsers.add_parser("mcp", help="Run the MCP server")
+    subparsers.add_parser(
+        "mcp",
+        help="Run the MCP server",
+        description="Run the Model Context Protocol server for AI assistants.",
+    )
 
     args = parser.parse_args(argv)
 
