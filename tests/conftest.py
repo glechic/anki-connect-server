@@ -10,9 +10,7 @@ from anki_connect_server.anki_wrapper import AnkiWrapper
 
 
 @pytest.fixture(autouse=True)
-def isolate_test_working_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def isolate_test_working_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Run each test from a clean tmp_path so the repo's .env (which may hold
     real AnkiWeb credentials) is not picked up by Config() / pydantic-settings,
     which read .env from the current working directory.
