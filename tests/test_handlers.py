@@ -27,6 +27,7 @@ from anki_connect_server.handlers import (
     handle_get_intervals,
     handle_get_media_dir_path,
     handle_model_field_names,
+    handle_model_fields_on_templates,
     handle_model_names,
     handle_model_names_and_ids,
     handle_model_styling,
@@ -34,6 +35,7 @@ from anki_connect_server.handlers import (
     handle_notes_info,
     handle_retrieve_media_file,
     handle_suspend,
+    handle_sync_status,
     handle_unsuspend,
     handle_update_note_fields,
     handle_version,
@@ -44,6 +46,7 @@ from anki_connect_server.types import (
     CardsIdsParams,
     ChangeDeckParams,
     CreateDeckParams,
+    CredentialsParams,
     DeleteDecksParams,
     EmptyParams,
     FilenameParams,
@@ -153,6 +156,35 @@ class TestModelHandlers:
         result = await handle_model_styling(anki_wrapper, ModelNameParams(modelName="Basic"))
         assert isinstance(result, dict)
         assert "css" in result
+
+    @pytest.mark.asyncio
+    async def test_handle_model_fields_on_templates(self, anki_wrapper):
+        """Test modelFieldsOnTemplates handler.
+
+        The Basic model has one template (Card 1) whose front/back templates
+        reference the Front and Back fields, so the result should map
+        'Card 1' -> [[front_fields...], [back_fields...]].
+        """
+        result = await handle_model_fields_on_templates(
+            anki_wrapper, ModelNameParams(modelName="Basic")
+        )
+        assert isinstance(result, dict)
+        assert "Card 1" in result
+        front_fields, back_fields = result["Card 1"]
+        assert isinstance(front_fields, list)
+        assert isinstance(back_fields, list)
+        # The Basic front template references Front; the back template
+        # references FrontSide (Anki's built-in front-preview) and Back.
+        assert "Front" in front_fields
+        assert "Back" in back_fields
+
+    @pytest.mark.asyncio
+    async def test_handle_model_fields_on_templates_unknown_model(self, anki_wrapper):
+        """modelFieldsOnTemplates for a nonexistent model returns {}."""
+        result = await handle_model_fields_on_templates(
+            anki_wrapper, ModelNameParams(modelName="NoSuchModel")
+        )
+        assert result == {}
 
 
 class TestNoteHandlers:
@@ -395,6 +427,50 @@ class TestMediaHandlers:
             anki_wrapper, FilenameParams(filename="nonexistent.txt")
         )
         assert result is None
+
+
+class TestSyncHandlers:
+    """Test sync-related handlers (sync_status; sync/sync_media are covered
+    by the mock-based test_sync_required_2.py)."""
+
+    @pytest.mark.asyncio
+    async def test_handle_sync_status_missing_credentials_raises(self, anki_wrapper, monkeypatch):
+        """syncStatus without credentials raises ValueError."""
+        from anki_connect_server.config import config
+        from anki_connect_server.handlers import dispatch
+
+        # Clear any credentials the module-level config picked up from .env.
+        monkeypatch.setattr(config, "ANKIWEB_USER", None)
+        monkeypatch.setattr(config, "ANKIWEB_PASS", None)
+        with pytest.raises(ValueError, match="ANKICONNECT_ANKIWEB_USER"):
+            await dispatch("syncStatus", {}, anki_wrapper)
+
+    @pytest.mark.asyncio
+    async def test_handle_sync_status_with_explicit_credentials(self, anki_wrapper, monkeypatch):
+        """syncStatus with explicit username/password returns the status dict.
+
+        We mock col.sync_login and col.sync_status so no network call is made.
+        """
+        from unittest.mock import Mock
+
+        mock_auth = Mock(hkey="test_key")
+        mock_status = Mock()
+        mock_status.server = "sync7.ankiweb.net"
+        mock_status.status = "ok"
+        mock_status.required = 0
+
+        monkeypatch.setattr(anki_wrapper.col, "sync_login", Mock(return_value=mock_auth))
+        monkeypatch.setattr(anki_wrapper.col, "sync_status", Mock(return_value=mock_status))
+
+        result = await handle_sync_status(
+            anki_wrapper,
+            CredentialsParams(username="user@example.com", password="pw"),
+        )
+
+        assert isinstance(result, dict)
+        assert result["server"] == "sync7.ankiweb.net"
+        assert result["status"] == "ok"
+        assert result["required"] == 0
 
 
 class TestMultiHandler:

@@ -325,3 +325,57 @@ async def test_invalid_json(app_with_wrapper):
             "/", content="invalid json", headers={"Content-Type": "application/json"}
         )
         assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_creates_and_closes_wrapper(monkeypatch):
+    """app_lifespan constructs an AnkiWrapper on startup and closes it on shutdown.
+
+    The ASGITransport-based tests bypass the lifespan (they set
+    app.state.anki_wrapper directly), so this exercises the lifespan context
+    manager in isolation to cover the create/close path.
+    """
+    from anki_connect_server.api import app, app_lifespan
+
+    class FakeWrapper:
+        def __init__(self, path: str) -> None:
+            self.path = path
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(
+        "anki_connect_server.api.create_anki_wrapper",
+        lambda config=None: FakeWrapper("/fake.anki2"),
+    )
+
+    # Drive the lifespan async context manager directly.
+    async with app_lifespan(app):
+        wrapper = getattr(app.state, "anki_wrapper", None)
+        assert wrapper is not None
+        assert isinstance(wrapper, FakeWrapper)
+        assert wrapper.closed is False
+
+    # After exiting the lifespan, the wrapper is closed and state cleared.
+    assert wrapper.closed is True
+    assert getattr(app.state, "anki_wrapper", None) is None
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_handles_shutdown_when_wrapper_missing(monkeypatch):
+    """app_lifespan's finally tolerates a missing wrapper (e.g. startup failed)."""
+    from anki_connect_server.api import app, app_lifespan
+
+    # Make create_anki_wrapper raise so app.state.anki_wrapper is never set.
+    def boom(config=None):
+        raise RuntimeError("startup failed")
+
+    monkeypatch.setattr("anki_connect_server.api.create_anki_wrapper", boom)
+
+    with pytest.raises(RuntimeError, match="startup failed"):
+        async with app_lifespan(app):
+            pass
+
+    # State was never set; the finally does not raise.
+    assert getattr(app.state, "anki_wrapper", None) is None
