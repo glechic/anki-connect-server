@@ -245,6 +245,87 @@ class TestSyncSafety:
         assert "Test error" in caplog.text
 
 
+class TestCollectionGeneration:
+    """collection_generation increments whenever sync reopens the collection.
+
+    Callers (e.g. a future review session) can use this to detect that a sync
+    invalidated their cached card/note handles mid-session.
+    """
+
+    def test_starts_at_zero(self):
+        """A fresh wrapper has collection_generation == 0."""
+        mock_col = Mock()
+        with _make_wrapper(mock_col) as wrapper:
+            assert wrapper.collection_generation == 0
+
+    def test_full_sync_increments(self, patched_config):
+        """FULL_SYNC reopens via _full_download -> _reopen_collection (+1)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_SYNC)
+        with _make_wrapper(mock_col) as wrapper:
+            assert wrapper.collection_generation == 0
+            wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 1
+
+    def test_full_download_increments(self, patched_config):
+        """FULL_DOWNLOAD reopens via _full_download -> _reopen_collection (+1)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_DOWNLOAD)
+        with _make_wrapper(mock_col) as wrapper:
+            assert wrapper.collection_generation == 0
+            wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 1
+
+    def test_normal_sync_increments(self, patched_config):
+        """NORMAL_SYNC reopens after media sync (+1)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.NORMAL_SYNC)
+        with _make_wrapper(mock_col) as wrapper:
+            wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 1
+
+    def test_no_changes_increments(self, patched_config):
+        """NO_CHANGES reopens after media sync (+1)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.NO_CHANGES)
+        with _make_wrapper(mock_col) as wrapper:
+            wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 1
+
+    def test_full_upload_does_not_increment(self, patched_config):
+        """FULL_UPLOAD raises before any reopen, so generation stays at 0."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="full upload"):
+                wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 0
+
+    def test_repeated_syncs_accumulate(self, patched_config):
+        """Each successful sync increments the generation by 1."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.NO_CHANGES)
+        with _make_wrapper(mock_col) as wrapper:
+            wrapper.sync_to_ankiweb()
+            assert wrapper.collection_generation == 1
+            wrapper.sync_to_ankiweb()
+            assert wrapper.collection_generation == 2
+            wrapper.sync_to_ankiweb()
+            assert wrapper.collection_generation == 3
+
+    def test_failed_download_still_increments(self, patched_config):
+        """_full_download reopens in a finally, so even a failed download
+        increments generation (the collection is reopened to a usable state)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_DOWNLOAD)
+        mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="Full collection download failed"):
+                wrapper.sync_to_ankiweb()
+
+        # _full_download's finally called _reopen_collection before the
+        # SyncError wrapper raised, so generation advanced.
+        assert wrapper.collection_generation == 1
+
+
 class TestMediaSync:
     """sync_media_only and _wait_for_media behaviour."""
 
