@@ -1,0 +1,93 @@
+name: Docker Build and Push
+
+# Runs after the Quality workflow completes on the same commit/tag. Builds
+# and pushes the Docker image only when Quality succeeded; pushes to Docker
+# Hub on main pushes and version tags (gated on the upstream run's head
+# branch), skipping push on pull requests.
+on:
+  workflow_run:
+    workflows: [Quality]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      docker
+
+    steps:
+      - name: Checkout the upstream commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Determine whether to push
+        id: should_push
+        run: |
+          branch="${{ github.event.workflow_run.head_branch }}"
+          event="${{ github.event.workflow_run.event }}"
+          # Push on main branch pushes and version tags; never on PRs.
+          if [ "$event" = "pull_request" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          elif [ "$branch" = "main" ] || [[ "$branch" == v* ]]; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: steps.should_push.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKER_USERNAME }}/anki-connect-server
+          tags: |
+            type=raw,value=latest,enable=${{ steps.should_push.outputs.push == 'true' && github.event.workflow_run.head_branch == 'main' }}
+            type=raw,value=${{ github.event.workflow_run.head_branch }},enable=${{ steps.should_push.outputs.push == 'true' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+            type=sha,prefix=,format=short,enable=${{ steps.should_push.outputs.push == 'true' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ steps.should_push.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  update-description:
+    name: update-description
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    environment:
+      docker
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Update Docker Hub Description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: ${{ vars.DOCKER_USERNAME }}/anki-connect-server
+          readme-filepath: ./DOCKER_README.md

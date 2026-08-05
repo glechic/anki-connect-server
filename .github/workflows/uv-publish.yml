@@ -1,0 +1,54 @@
+name: Publish
+
+# Runs after the Quality workflow completes on the same commit/tag. The
+# `workflow_run` event fires on the default branch and reports the upstream
+# run's head sha via the GitHub API; we gate on the run being successful AND
+# the triggering head branch looking like a version tag so only tagged
+# releases publish to PyPI.
+on:
+  workflow_run:
+    workflows: [Quality]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  uv-publish:
+    name: python
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "0.7.3"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Build
+        run: uv build
+
+      - name: Test (wheel)
+        run: uv run --isolated --no-project --with dist/*.whl anki-connect-server --help
+
+      - name: Publish
+        run: uv publish
