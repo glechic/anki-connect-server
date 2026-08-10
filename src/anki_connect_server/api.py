@@ -1,3 +1,4 @@
+import atexit
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -22,6 +23,7 @@ def create_anki_wrapper(config: Config | None = None) -> AnkiWrapper:
 @asynccontextmanager  # type: ignore[deprecated]
 async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.anki_wrapper = create_anki_wrapper()
+    atexit.register(app.state.anki_wrapper.close)
     try:
         yield
     finally:

@@ -1,3 +1,6 @@
+import atexit
+import signal
+import sys
 from typing import Any, cast
 
 from fastmcp import FastMCP
@@ -27,6 +30,14 @@ def get_anki_wrapper() -> AnkiWrapper:
 
 def init_wrapper() -> None:
     get_anki_wrapper()
+    atexit.register(close_wrapper)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+
+
+def _signal_handler(signum: int, frame: Any) -> None:
+    close_wrapper()
+    sys.exit(0 if signum == signal.SIGINT else 143 if signum == signal.SIGTERM else 1)
 
 
 def close_wrapper() -> None:

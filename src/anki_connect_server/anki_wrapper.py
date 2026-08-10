@@ -49,8 +49,16 @@ class AnkiWrapper:
 
     def close(self) -> None:
         if not self._closed:
-            self.col.close()
-            self._closed = True
+            try:
+                self.col.close()
+            except Exception:
+                logger.warning(
+                    "Failed to close the Anki collection cleanly; "
+                    "the database lock may persist until the process exits.",
+                    exc_info=True,
+                )
+            finally:
+                self._closed = True
 
     def _reopen_collection(self) -> None:
         self.col = Collection(self.collection_path)
