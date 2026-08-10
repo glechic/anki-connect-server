@@ -37,7 +37,7 @@ Set environment variables before running the server:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file |
+| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `127.0.0.1` | Bind address (use `0.0.0.0` for external access) |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (required for sync) |
@@ -48,7 +48,7 @@ Set environment variables before running the server:
 
 ```bash
 # Required: Path to your Anki collection
-ANKI_COLLECTION_PATH=/path/to/collection.anki21
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21
 
 # Optional: Server configuration
 ANKICONNECT_PORT=8765
@@ -59,7 +59,7 @@ ANKICONNECT_ANKIWEB_USER=your@email.com
 ANKICONNECT_ANKIWEB_PASS=your_password
 
 # Optional: Custom sync server
-ANKIWEB_URL=https://your-sync-server.com
+ANKICONNECT_ANKIWEB_URL=https://your-sync-server.com
 ```
 
 ## 🚀 Usage
@@ -68,13 +68,13 @@ ANKIWEB_URL=https://your-sync-server.com
 
 ```bash
 # Run the API server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server api
 
 # Run the MCP server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
@@ -250,7 +250,7 @@ The server includes a Model Context Protocol (MCP) integration for AI assistants
 ### Starting the MCP Server
 
 ```bash
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
@@ -296,7 +296,7 @@ Add to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["anki-connect-server", "mcp"],
       "env": {
-        "ANKI_COLLECTION_PATH": "/path/to/collection.anki21",
+        "ANKICONNECT_COLLECTION_PATH": "/path/to/collection.anki21",
         "ANKICONNECT_ANKIWEB_USER": "your@email.com",
         "ANKICONNECT_ANKIWEB_PASS": "your_password"
       }
@@ -313,7 +313,7 @@ Add to your `claude_desktop_config.json`:
 docker run -d \
   -p 8765:8765 \
   -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki21 \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
@@ -333,7 +333,7 @@ services:
     volumes:
       - ./collection.anki21:/data/collection.anki21
     environment:
-      - ANKI_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
       - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
       - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
     restart: unless-stopped

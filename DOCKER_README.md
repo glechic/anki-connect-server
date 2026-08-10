@@ -25,7 +25,7 @@ Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MC
 docker run -d \
   -p 8765:8765 \
   -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki21 \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
@@ -46,7 +46,7 @@ services:
     volumes:
       - ./collection.anki21:/data/collection.anki21
     environment:
-      - ANKI_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
       - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
       - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
     restart: unless-stopped
@@ -61,12 +61,12 @@ services:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
+| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `0.0.0.0` | Bind address |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (for sync) |
 | `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (for sync) |
-| `ANKIWEB_URL` | No | - | Custom sync server URL |
+| `ANKICONNECT_ANKIWEB_URL` | No | - | Custom sync server URL |
 
 ## API Usage
 
@@ -120,9 +120,9 @@ The image also includes MCP server support for AI assistants:
 ```bash
 docker run -d \
   -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki21 \
   glechic/anki-connect-server \
-  uv run mcp-server
+  uv run anki-connect-server mcp
 ```
 
 ## Volumes
