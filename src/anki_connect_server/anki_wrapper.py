@@ -86,7 +86,9 @@ class AnkiWrapper:
         pass_ = password or cfg.ANKIWEB_PASS
         url = endpoint or cfg.ANKIWEB_URL
         if not user or not pass_:
-            raise ValueError(f"ANKICONNECT_ANKIWEB_USER and ANKICONNECT_ANKIWEB_PASS required for {operation}")
+            raise ValueError(
+                f"ANKICONNECT_ANKIWEB_USER and ANKICONNECT_ANKIWEB_PASS required for {operation}"
+            )
         return user, pass_, url
 
     @staticmethod
@@ -697,7 +699,9 @@ class AnkiWrapper:
         url = endpoint or cfg.ANKIWEB_URL
 
         if not user or not pass_:
-            raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKICONNECT_ANKIWEB_PASS required for sync status")
+            raise ValueError(
+                "ANKICONNECT_ANKIWEB_USER and ANKICONNECT_ANKIWEB_PASS required for sync status"
+            )
 
         auth = self.col.sync_login(
             username=user,
