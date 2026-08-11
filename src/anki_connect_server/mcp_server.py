@@ -296,10 +296,14 @@ def get_sync_status() -> JsonObject:
 mcp_app = mcp.http_app()
 
 
-def run() -> None:
+def run(transport: str = "stdio") -> None:
     init_wrapper()
     try:
-        mcp.run()
+        if transport == "http":
+            settings = get_config()
+            mcp.run(transport="http", host=settings.BIND, port=settings.PORT)
+        else:
+            mcp.run(transport="stdio")
     finally:
         close_wrapper()
 

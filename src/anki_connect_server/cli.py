@@ -19,10 +19,17 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # MCP server subcommand
-    subparsers.add_parser(
+    mcp_parser = subparsers.add_parser(
         "mcp",
         help="Run the MCP server",
         description="Run the Model Context Protocol server for AI assistants.",
+    )
+    mcp_parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport protocol: stdio (one process per client) or http "
+        "(single long-lived server serving all clients). Default: stdio.",
     )
 
     args = parser.parse_args(argv)
@@ -34,7 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "mcp":
         from anki_connect_server.mcp_server import run
 
-        run()
+        run(transport=args.transport)
     else:
         parser.print_help()
         sys.exit(1)

@@ -31,16 +31,16 @@ class TestCli:
 
     def test_mcp_subcommand_invokes_run(self, monkeypatch):
         """'mcp' subcommand calls mcp_server.run."""
-        called = {"n": 0}
+        calls: list[str] = []
 
-        def fake_run():
-            called["n"] += 1
+        def fake_run(transport: str = "stdio"):
+            calls.append(transport)
 
         import anki_connect_server.mcp_server as mcp_module
 
         monkeypatch.setattr(mcp_module, "run", fake_run)
         main(argv=["mcp"])
-        assert called["n"] == 1
+        assert calls == ["stdio"]
 
     def test_unknown_subcommand_exits_nonzero(self, capsys):
         """Unknown subcommand exits with error."""
@@ -80,6 +80,28 @@ class TestCli:
         out = capsys.readouterr().out
         assert "mcp" in out
         assert "Run the Model Context Protocol server for AI assistants." in out
+        assert "--transport" in out
+
+    def test_mcp_transport_http_passed_to_run(self, monkeypatch):
+        """``mcp --transport http`` forwards transport='http' to run."""
+        calls: list[str] = []
+
+        def fake_run(transport: str = "stdio"):
+            calls.append(transport)
+
+        import anki_connect_server.mcp_server as mcp_module
+
+        monkeypatch.setattr(mcp_module, "run", fake_run)
+        main(argv=["mcp", "--transport", "http"])
+        assert calls == ["http"]
+
+    def test_mcp_transport_invalid_rejected(self, capsys):
+        """``mcp --transport bogus`` is rejected by argparse."""
+        with pytest.raises(SystemExit) as exc:
+            main(argv=["mcp", "--transport", "bogus"])
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "invalid choice" in err
 
     def test_unknown_subcommand_argparse_exits_two(self, capsys):
         """argparse rejects an unknown subcommand with exit code 2."""
@@ -132,7 +154,7 @@ class TestCli:
         """Running ``api`` must not invoke ``mcp_server.run``."""
         mcp_calls = {"n": 0}
 
-        def fake_mcp_run():
+        def fake_mcp_run(transport: str = "stdio"):
             mcp_calls["n"] += 1
 
         import anki_connect_server.mcp_server as mcp_module
@@ -160,7 +182,7 @@ class TestCli:
 
         monkeypatch.setattr(api_module, "run_server", fake_api_run)
 
-        def fake_mcp_run():
+        def fake_mcp_run(transport: str = "stdio"):
             pass
 
         import anki_connect_server.mcp_server as mcp_module
