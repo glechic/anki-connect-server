@@ -61,7 +61,7 @@ services:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file |
+| `ANKICONNECT_COLLECTION_PATH` | No | temp path | Path to your `.anki2` collection file |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `0.0.0.0` | Bind address |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (for sync) |

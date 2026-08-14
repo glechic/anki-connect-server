@@ -1,7 +1,5 @@
 """Tests for config module."""
 
-import pytest
-
 
 def test_config_defaults():
     """Test that config has correct defaults."""
@@ -77,15 +75,14 @@ def test_config_loads_from_env(monkeypatch):
     assert cfg.ANKIWEB_URL == "https://sync.example.com"
 
 
-def test_config_rejects_empty_collection_path():
-    """An empty COLLECTION_PATH must raise instead of letting Collection()
-    fail opaquely later."""
-    from pydantic import ValidationError
-
+def test_config_defaults_empty_collection_path_to_temp():
+    """An empty COLLECTION_PATH defaults to a temp path instead of raising."""
     from anki_connect_server.config import Config
 
-    with pytest.raises(ValidationError, match="ANKICONNECT_COLLECTION_PATH"):
-        Config(COLLECTION_PATH="")
+    cfg = Config(COLLECTION_PATH="", _env_file=None)  # type: ignore[call-arg]
+    assert cfg.COLLECTION_PATH != ""
+    assert cfg.COLLECTION_PATH.endswith("collection.anki2")
+    assert "anki-connect-server" in cfg.COLLECTION_PATH
 
 
 def test_config_accepts_anki2_extension():

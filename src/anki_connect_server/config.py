@@ -1,7 +1,18 @@
+import tempfile
 from functools import cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_collection_path() -> str:
+    """Return a temp path for a fresh Anki collection.
+
+    Used when ``ANKICONNECT_COLLECTION_PATH`` is not configured, so the server
+    can boot without an existing collection (e.g. for testing or first run).
+    """
+    return str(Path(tempfile.gettempdir()) / "anki-connect-server" / "collection.anki2")
 
 
 class Config(BaseSettings):
@@ -26,10 +37,7 @@ class Config(BaseSettings):
     @classmethod
     def _validate_collection_path(cls, v: str) -> str:
         if not v:
-            raise ValueError(
-                "ANKICONNECT_COLLECTION_PATH must be set to an Anki collection file "
-                "(typically a .anki2 file)"
-            )
+            return _default_collection_path()
         return v
 
 
