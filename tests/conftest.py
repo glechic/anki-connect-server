@@ -27,7 +27,7 @@ def isolate_test_working_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 def anki_wrapper() -> Iterator[AnkiWrapper]:
     """Create a real AnkiWrapper with temporary collection."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        collection_path = Path(tmpdir) / "test.anki21"
+        collection_path = Path(tmpdir) / "test.anki2"
         media_path = collection_path.with_name(collection_path.stem + "-media")
         media_path.mkdir(parents=True, exist_ok=True)
 

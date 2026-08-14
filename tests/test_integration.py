@@ -10,7 +10,7 @@ import pytest
 def anki_wrapper():
     """Create an AnkiWrapper with temporary collection."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        collection_path = os.path.join(tmpdir, "test.anki21")
+        collection_path = os.path.join(tmpdir, "test.anki2")
 
         from anki_connect_server.anki_wrapper import AnkiWrapper
 

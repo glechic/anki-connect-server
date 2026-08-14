@@ -48,7 +48,7 @@ Set environment variables before running the server:
 
 ```bash
 # Required: Path to your Anki collection
-ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2
 
 # Optional: Server configuration
 ANKICONNECT_PORT=8765
@@ -68,13 +68,13 @@ ANKICONNECT_ANKIWEB_URL=https://your-sync-server.com
 
 ```bash
 # Run the API server
-ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server api
 
 # Run the MCP server
-ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
@@ -250,7 +250,7 @@ The server includes a Model Context Protocol (MCP) integration for AI assistants
 ### Starting the MCP Server
 
 ```bash
-ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
@@ -296,7 +296,7 @@ Add to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["anki-connect-server", "mcp"],
       "env": {
-        "ANKICONNECT_COLLECTION_PATH": "/path/to/collection.anki21",
+        "ANKICONNECT_COLLECTION_PATH": "/path/to/collection.anki2",
         "ANKICONNECT_ANKIWEB_USER": "your@email.com",
         "ANKICONNECT_ANKIWEB_PASS": "your_password"
       }
@@ -312,8 +312,8 @@ Add to your `claude_desktop_config.json`:
 ```bash
 docker run -d \
   -p 8765:8765 \
-  -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki21 \
+  -v /path/to/collection.anki2:/data/collection.anki2 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
@@ -331,9 +331,9 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - ./collection.anki21:/data/collection.anki21
+      - ./collection.anki2:/data/collection.anki2
     environment:
-      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki2
       - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
       - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
     restart: unless-stopped

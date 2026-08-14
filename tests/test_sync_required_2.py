@@ -91,7 +91,7 @@ def _make_wrapper(mock_col):
         patch("anki_connect_server.anki_wrapper.Collection", return_value=mock_col),
         tempfile.TemporaryDirectory() as tmpdir,
     ):
-        collection_path = os.path.join(tmpdir, "test.anki21")
+        collection_path = os.path.join(tmpdir, "test.anki2")
         yield AnkiWrapper(collection_path)
 
 

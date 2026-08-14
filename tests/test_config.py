@@ -7,7 +7,7 @@ def test_config_defaults():
     """Test that config has correct defaults."""
     from anki_connect_server.config import Config
 
-    cfg = Config(COLLECTION_PATH="/test/path.anki21")
+    cfg = Config(COLLECTION_PATH="/test/path.anki2")
     assert cfg.PORT == 8765
     assert cfg.BIND == "127.0.0.1"
 
@@ -16,7 +16,7 @@ def test_config_custom_values():
     """Test custom configuration values."""
     from anki_connect_server.config import Config
 
-    cfg = Config(PORT=9000, BIND="0.0.0.0", COLLECTION_PATH="/test/path.anki21")
+    cfg = Config(PORT=9000, BIND="0.0.0.0", COLLECTION_PATH="/test/path.anki2")
     assert cfg.PORT == 9000
     assert cfg.BIND == "0.0.0.0"
 
@@ -26,7 +26,7 @@ def test_config_ankiweb():
     from anki_connect_server.config import Config
 
     cfg = Config(
-        COLLECTION_PATH="/test/path.anki21",
+        COLLECTION_PATH="/test/path.anki2",
         ANKIWEB_USER="test@example.com",
         ANKIWEB_PASS="password123",
     )
@@ -38,7 +38,7 @@ def test_config_optional_ankiweb(monkeypatch):
     """Test that AnkiWeb config is optional when not set in env."""
     from anki_connect_server.config import Config
 
-    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/test/path.anki21")
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/test/path.anki2")
     monkeypatch.delenv("ANKICONNECT_ANKIWEB_USER", raising=False)
     monkeypatch.delenv("ANKICONNECT_ANKIWEB_PASS", raising=False)
 
@@ -51,8 +51,8 @@ def test_validate_passes_with_collection_path():
     """Test that validation passes with collection path."""
     from anki_connect_server.config import Config
 
-    cfg = Config(COLLECTION_PATH="/test/path.anki21")
-    assert cfg.COLLECTION_PATH == "/test/path.anki21"
+    cfg = Config(COLLECTION_PATH="/test/path.anki2")
+    assert cfg.COLLECTION_PATH == "/test/path.anki2"
 
 
 def test_config_loads_from_env(monkeypatch):
@@ -63,7 +63,7 @@ def test_config_loads_from_env(monkeypatch):
     the rest of the test session (other modules hold a reference to the
     pre-reload instance).
     """
-    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/env/path.anki21")
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/env/path.anki2")
     monkeypatch.setenv("ANKICONNECT_PORT", "9000")
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_USER", "env@user.com")
     monkeypatch.setenv("ANKICONNECT_ANKIWEB_URL", "https://sync.example.com")
@@ -72,7 +72,7 @@ def test_config_loads_from_env(monkeypatch):
 
     cfg = Config(_env_file=None)  # type: ignore[call-arg]
     assert cfg.PORT == 9000
-    assert cfg.COLLECTION_PATH == "/env/path.anki21"
+    assert cfg.COLLECTION_PATH == "/env/path.anki2"
     assert cfg.ANKIWEB_USER == "env@user.com"
     assert cfg.ANKIWEB_URL == "https://sync.example.com"
 

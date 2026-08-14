@@ -24,8 +24,8 @@ Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MC
 ```bash
 docker run -d \
   -p 8765:8765 \
-  -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki21 \
+  -v /path/to/collection.anki2:/data/collection.anki2 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
@@ -44,9 +44,9 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - ./collection.anki21:/data/collection.anki21
+      - ./collection.anki2:/data/collection.anki2
     environment:
-      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki2
       - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
       - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
     restart: unless-stopped
@@ -61,7 +61,7 @@ services:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
+| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `0.0.0.0` | Bind address |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (for sync) |
@@ -119,8 +119,8 @@ The image also includes MCP server support for AI assistants:
 
 ```bash
 docker run -d \
-  -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki21 \
+  -v /path/to/collection.anki2:/data/collection.anki2 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
   glechic/anki-connect-server \
   uv run anki-connect-server mcp
 ```
@@ -128,7 +128,7 @@ docker run -d \
 ## Volumes
 
 - `/data` - Directory for Anki collection and media files
-  - Mount your `collection.anki21` file here
+  - Mount your `collection.anki2` file here
   - Anki media directory will be created automatically
 
 ## Security Notes
