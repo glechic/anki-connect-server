@@ -76,13 +76,17 @@ def test_config_loads_from_env(monkeypatch):
 
 
 def test_config_defaults_empty_collection_path_to_temp():
-    """An empty COLLECTION_PATH defaults to a temp path instead of raising."""
+    """An empty COLLECTION_PATH defaults to a random temp path instead of raising."""
     from anki_connect_server.config import Config
 
-    cfg = Config(COLLECTION_PATH="", _env_file=None)  # type: ignore[call-arg]
-    assert cfg.COLLECTION_PATH != ""
-    assert cfg.COLLECTION_PATH.endswith("collection.anki2")
-    assert "anki-connect-server" in cfg.COLLECTION_PATH
+    cfg1 = Config(COLLECTION_PATH="", _env_file=None)  # type: ignore[call-arg]
+    cfg2 = Config(COLLECTION_PATH="", _env_file=None)  # type: ignore[call-arg]
+    assert cfg1.COLLECTION_PATH != ""
+    assert cfg1.COLLECTION_PATH.endswith(".anki2")
+    assert "anki-connect-server-" in cfg1.COLLECTION_PATH
+    # Each invocation gets a distinct random filename so concurrent processes
+    # don't contend for the same SQLite lock.
+    assert cfg1.COLLECTION_PATH != cfg2.COLLECTION_PATH
 
 
 def test_config_accepts_anki2_extension():

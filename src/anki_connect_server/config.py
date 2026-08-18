@@ -1,3 +1,4 @@
+import secrets
 import tempfile
 from functools import cache
 from pathlib import Path
@@ -7,12 +8,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_collection_path() -> str:
-    """Return a temp path for a fresh Anki collection.
+    """Return a temp path with a random filename for a fresh Anki collection.
 
-    Used when ``ANKICONNECT_COLLECTION_PATH`` is not configured, so the server
-    can boot without an existing collection (e.g. for testing or first run).
+    Used when ``ANKICONNECT_COLLECTION_PATH`` is not configured. The random
+    filename ensures each process gets its own collection, so concurrent MCP
+    instances (e.g. spawned by a client) don't contend for the same SQLite lock.
     """
-    return str(Path(tempfile.gettempdir()) / "anki-connect-server" / "collection.anki2")
+    return str(Path(tempfile.gettempdir()) / f"anki-connect-server-{secrets.token_hex(8)}.anki2")
 
 
 class Config(BaseSettings):
