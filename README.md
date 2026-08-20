@@ -256,6 +256,46 @@ ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
 ```
 
+### Transports: stdio vs http
+
+The MCP server supports two transports via `--transport`:
+
+| Transport | Flag | Behavior |
+|-----------|------|----------|
+| `stdio` (default) | `--transport stdio` | One process per client connection. The MCP client (e.g. Claude Desktop, Hermes) spawns a new process for each session. |
+| `http` | `--transport http` | A single long-lived server holds the collection and serves all clients over HTTP. |
+
+```bash
+# stdio (default)
+uvx anki-connect-server mcp
+
+# http
+uvx anki-connect-server mcp --transport http
+```
+
+### ⚠️ Concurrent MCP processes and the "already open" error
+
+The Anki collection is a single-writer SQLite database: **only one process can hold the lock at a time.** The default `stdio` transport spawns a new process per client connection, so if your MCP client (Hermes, Claude Desktop, etc.) starts a new process before the previous one has exited, you will see:
+
+```
+anki.errors.DBError: Anki already open, or media currently syncing.
+```
+
+This is a **SQLite lock contention** error, not a media-sync issue — despite what the message says.
+
+**Workarounds:**
+
+1. **Use HTTP transport** (recommended for multi-client setups):
+   ```bash
+   uvx anki-connect-server mcp --transport http
+   # Server runs on http://127.0.0.1:8765/mcp
+   ```
+   Configure your MCP client to connect to the HTTP endpoint instead of spawning a stdio process. Only one process holds the collection and serves all connections.
+
+2. **Leave `ANKICONNECT_COLLECTION_PATH` unset.** When not configured, each process gets a random temp collection (`anki-connect-server-<random>.anki2`), so concurrent processes don't contend for the same file. Note: each process will have its own empty collection — set the path explicitly if you need a shared collection.
+
+3. **Ensure only one process is running.** If you stick with stdio, make sure your MCP client kills the previous process before starting a new one.
+
 ### Available MCP Tools
 
 - `get_deck_names` - Get all deck names
@@ -287,6 +327,8 @@ uvx anki-connect-server mcp
 
 ### Adding to Claude Desktop
 
+**Option A — stdio (default, one process per session):**
+
 Add to your `claude_desktop_config.json`:
 
 ```json
@@ -304,6 +346,16 @@ Add to your `claude_desktop_config.json`:
   }
 }
 ```
+
+**Option B — http (single long-lived server, avoids lock contention):**
+
+First start the HTTP server (e.g. as a systemd service or background process):
+
+```bash
+uvx anki-connect-server mcp --transport http
+```
+
+Then point your MCP client at `http://127.0.0.1:8765/mcp`.
 
 ## 🐳 Docker
 
