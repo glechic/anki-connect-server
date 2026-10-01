@@ -12,6 +12,10 @@ class NoteInput(TypedDict):
     modelName: str
     fields: dict[str, str]
     tags: NotRequired[list[str]]
+    options: NotRequired[dict[str, Any]]
+    audio: NotRequired[Any]
+    video: NotRequired[Any]
+    picture: NotRequired[Any]
 
 
 class CardTemplateInput(TypedDict):

@@ -122,6 +122,32 @@ async def test_add_note_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_can_add_notes_with_error_detail_action(app_with_wrapper):
+    """Test canAddNotesWithErrorDetail action."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "canAddNotesWithErrorDetail",
+                "version": 6,
+                "params": {
+                    "notes": [
+                        {
+                            "deckName": "Default",
+                            "modelName": "Basic",
+                            "fields": {"Front": "ApiCanAddDetail", "Back": "World"},
+                        }
+                    ]
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == [{"canAdd": True}]
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
 async def test_find_notes_action(app_with_wrapper):
     """Test findNotes action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

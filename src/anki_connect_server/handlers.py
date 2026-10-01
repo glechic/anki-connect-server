@@ -205,6 +205,12 @@ async def handle_can_add_notes(wrapper: AnkiWrapper, params: AddNotesParams) -> 
     return await _run(wrapper.can_add_notes, params.notes)
 
 
+async def handle_can_add_notes_with_error_detail(
+    wrapper: AnkiWrapper, params: AddNotesParams
+) -> list[JsonObject]:
+    return await _run(wrapper.can_add_notes_with_error_detail, params.notes)
+
+
 async def handle_update_note_fields(wrapper: AnkiWrapper, params: UpdateNoteFieldsParams) -> None:
     await _run(wrapper.update_note_fields, params.note.model_dump())
 
@@ -358,6 +364,7 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "addNote": (AddNoteParams, handle_add_note),
     "addNotes": (AddNotesParams, handle_add_notes),
     "canAddNotes": (AddNotesParams, handle_can_add_notes),
+    "canAddNotesWithErrorDetail": (AddNotesParams, handle_can_add_notes_with_error_detail),
     "updateNoteFields": (UpdateNoteFieldsParams, handle_update_note_fields),
     "updateNote": (UpdateNoteParams, handle_update_note),
     "addTags": (AddTagsParams, handle_add_tags),

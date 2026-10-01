@@ -3,6 +3,7 @@
 # anki.cards first triggers a circular import (anki.hooks -> anki.hooks_gen ->
 # anki.cards.Card while anki.cards is still initialising).
 import base64
+import hashlib
 import logging
 import re
 import threading
@@ -12,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from anki.collection import Collection
+from anki.collection import Collection, StripHtmlMode
 from anki.cards import CardId
 from anki.decks import DeckConfigDict, DeckConfigId, DeckId
 from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
@@ -535,7 +536,174 @@ class AnkiWrapper:
         return [self.add_note(note) for note in notes]
 
     def can_add_notes(self, notes: list[JsonObject]) -> list[bool]:
-        return [bool(self.add_note(n)) for n in notes]
+        return [
+            bool(item.get("canAdd", False))
+            for item in self.can_add_notes_with_error_detail(notes)
+        ]
+
+    def can_add_notes_with_error_detail(
+        self, notes: list[JsonObject]
+    ) -> list[JsonObject]:
+        return [self.can_add_note_with_error_detail(note) for note in notes]
+
+    def can_add_note_with_error_detail(self, note: JsonObject) -> JsonObject:
+        try:
+            self._create_note_for_validation(note)
+            return {"canAdd": True}
+        except Exception as e:
+            return {"canAdd": False, "error": str(e)}
+
+    def _create_note_for_validation(self, note: JsonObject) -> Note:
+        model_name = note.get("modelName")
+        if not model_name or not isinstance(model_name, str):
+            raise Exception(f"model was not found: {model_name}")
+        notetype = self._get_model_by_name(model_name)
+        if not notetype:
+            raise Exception(f"model was not found: {model_name}")
+
+        deck_name = note.get("deckName")
+        if not deck_name or not isinstance(deck_name, str):
+            raise Exception(f"deck was not found: {deck_name}")
+        deck = self.col.decks.by_name(deck_name)
+        if not deck:
+            raise Exception(f"deck was not found: {deck_name}")
+
+        anki_note = Note(self.col, notetype)
+        nt = anki_note.note_type()
+        if nt is not None:
+            nt["did"] = deck["id"]
+        tags = note.get("tags")
+        if isinstance(tags, list):
+            anki_note.tags = [str(t) for t in tags]
+
+        fields = note.get("fields", {})
+        if isinstance(fields, dict):
+            anki_keys = list(anki_note.keys())
+            anki_keys_lower = {k.lower(): k for k in anki_keys}
+            for name, value in fields.items():
+                target_key = anki_keys_lower.get(name.lower(), name)
+                if target_key in anki_note:
+                    anki_note[target_key] = str(value) if value is not None else ""
+
+        allow_duplicate = False
+        duplicate_scope: str | None = None
+        duplicate_scope_deck_name: str | None = None
+        duplicate_scope_check_children = False
+        duplicate_scope_check_all_models = False
+
+        if "options" in note:
+            options = note["options"]
+            if isinstance(options, dict):
+                if "allowDuplicate" in options:
+                    allow_duplicate_val = options["allowDuplicate"]
+                    if type(allow_duplicate_val) is not bool:
+                        raise Exception('option parameter "allowDuplicate" must be boolean')
+                    allow_duplicate = allow_duplicate_val
+                if "duplicateScope" in options and isinstance(options["duplicateScope"], str):
+                    duplicate_scope = options["duplicateScope"]
+                if "duplicateScopeOptions" in options:
+                    duplicate_scope_options = options["duplicateScopeOptions"]
+                    if isinstance(duplicate_scope_options, dict):
+                        if "deckName" in duplicate_scope_options and isinstance(
+                            duplicate_scope_options["deckName"], str
+                        ):
+                            duplicate_scope_deck_name = duplicate_scope_options["deckName"]
+                        if "checkChildren" in duplicate_scope_options:
+                            check_children_val = duplicate_scope_options["checkChildren"]
+                            if type(check_children_val) is not bool:
+                                raise Exception(
+                                    'option parameter "duplicateScopeOptions.checkChildren" must be boolean'
+                                )
+                            duplicate_scope_check_children = check_children_val
+                        if "checkAllModels" in duplicate_scope_options:
+                            check_all_models_val = duplicate_scope_options["checkAllModels"]
+                            if type(check_all_models_val) is not bool:
+                                raise Exception(
+                                    'option parameter "duplicateScopeOptions.checkAllModels" must be boolean'
+                                )
+                            duplicate_scope_check_all_models = check_all_models_val
+
+        duplicate_or_empty = self._is_note_duplicate_or_empty_in_scope(
+            anki_note,
+            deck,
+            duplicate_scope,
+            duplicate_scope_deck_name,
+            duplicate_scope_check_children,
+            duplicate_scope_check_all_models,
+        )
+
+        if duplicate_or_empty == 1:
+            raise Exception("cannot create note because it is empty")
+        if duplicate_or_empty == 2:
+            if allow_duplicate:
+                return anki_note
+            raise Exception("cannot create note because it is a duplicate")
+        if duplicate_or_empty == 0:
+            return anki_note
+        raise Exception("cannot create note for unknown reason")
+
+    def _is_note_duplicate_or_empty_in_scope(
+        self,
+        note: Note,
+        deck: dict[str, Any],
+        duplicate_scope: str | None,
+        duplicate_scope_deck_name: str | None,
+        duplicate_scope_check_children: bool,
+        duplicate_scope_check_all_models: bool,
+    ) -> int:
+        # Returns: 1 if first is empty, 2 if first is a duplicate, 0 otherwise.
+        if duplicate_scope != "deck" and not duplicate_scope_check_all_models:
+            return note.dupeOrEmpty() or 0
+
+        # Primary field for uniqueness
+        if not note.fields:
+            return 1
+        val = note.fields[0]
+        if not val.strip():
+            return 1
+
+        stripped = self.col._backend.strip_html(  # pyright: ignore[reportPrivateUsage]
+            text=val, mode=StripHtmlMode.PRESERVE_MEDIA_FILENAMES
+        )
+        csum = int(
+            hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:8], 16
+        )
+
+        dids: dict[int, bool] | None = None
+        if duplicate_scope == "deck":
+            did = deck["id"]
+            if duplicate_scope_deck_name is not None:
+                deck2 = self.col.decks.by_name(duplicate_scope_deck_name)
+                if deck2 is None:
+                    return 0
+                did = deck2["id"]
+
+            dids = {did: True}
+            if duplicate_scope_check_children:
+                for kv in self.col.decks.children(did):
+                    dids[kv[1]] = True
+
+        query = "select id from notes where csum=?"
+        query_args: list[Any] = [csum]
+        if note.id:
+            query += " and id!=?"
+            query_args.append(note.id)
+        if not duplicate_scope_check_all_models:
+            query += " and mid=?"
+            query_args.append(note.mid)
+
+        db = self.col.db
+        if db is None:
+            return 0
+
+        for note_id in db.list(query, *query_args):
+            if dids is None:
+                return 2
+            for card_deck_id in db.list("select did from cards where nid=?", note_id):
+                if card_deck_id in dids:
+                    return 2
+
+        return 0
 
     def update_note_fields(self, note: JsonObject) -> None:
         note_id = note.get("id")

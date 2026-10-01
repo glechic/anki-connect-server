@@ -15,6 +15,7 @@ from anki_connect_server.handlers import (
     handle_are_due,
     handle_are_suspended,
     handle_can_add_notes,
+    handle_can_add_notes_with_error_detail,
     handle_cards_info,
     handle_cards_to_notes,
     handle_change_deck,
@@ -297,6 +298,210 @@ class TestNoteHandlers:
         result = await handle_can_add_notes(anki_wrapper, AddNotesParams(notes=[_note()]))
         assert len(result) == 1
         assert result[0] is True
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_does_not_persist(self, anki_wrapper):
+        """canAddNotes must not persist notes to the database."""
+        result = await handle_can_add_notes(
+            anki_wrapper, AddNotesParams(notes=[_note(front="NotPersisted")])
+        )
+        assert result == [True]
+        assert anki_wrapper.find_notes("NotPersisted") == []
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_success(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail handler on a valid new note."""
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[_note()])
+        )
+        assert result == [{"canAdd": True}]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_duplicate(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail on duplicate notes."""
+        anki_wrapper.add_note(_note(front="DupeNote"))
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[_note(front="DupeNote")])
+        )
+        assert result == [{"canAdd": False, "error": "cannot create note because it is a duplicate"}]
+
+        # canAddNotes should also return False
+        bool_result = await handle_can_add_notes(
+            anki_wrapper, AddNotesParams(notes=[_note(front="DupeNote")])
+        )
+        assert bool_result == [False]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_allow_duplicate(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail with allowDuplicate=True."""
+        anki_wrapper.add_note(_note(front="DupeAllowed"))
+        note_with_opt: NoteInput = {
+            **_note(front="DupeAllowed"),
+            "options": {"allowDuplicate": True},
+        }
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[note_with_opt])
+        )
+        assert result == [{"canAdd": True}]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_empty(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail on empty fields."""
+        empty_note: NoteInput = {
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "", "Back": ""},
+        }
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[empty_note])
+        )
+        assert result == [{"canAdd": False, "error": "cannot create note because it is empty"}]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_missing_model(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail with nonexistent model."""
+        bad_model_note: NoteInput = {
+            "deckName": "Default",
+            "modelName": "NonExistentModel",
+            "fields": {"Front": "A", "Back": "B"},
+        }
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[bad_model_note])
+        )
+        assert result == [{"canAdd": False, "error": "model was not found: NonExistentModel"}]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_missing_deck(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail with nonexistent deck."""
+        bad_deck_note: NoteInput = {
+            "deckName": "NonExistentDeck",
+            "modelName": "Basic",
+            "fields": {"Front": "A", "Back": "B"},
+        }
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[bad_deck_note])
+        )
+        assert result == [{"canAdd": False, "error": "deck was not found: NonExistentDeck"}]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_duplicate_scope_deck(self, anki_wrapper):
+        """Test duplicateScope='deck' allows duplicates across different decks."""
+        anki_wrapper.create_deck("OtherDeck")
+        anki_wrapper.add_note(_note(deck="Default", front="ScopedWord"))
+
+        # Checking in OtherDeck with deck scope should succeed
+        scoped_note: NoteInput = {
+            **_note(deck="OtherDeck", front="ScopedWord"),
+            "options": {"duplicateScope": "deck"},
+        }
+        result = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[scoped_note])
+        )
+        assert result == [{"canAdd": True}]
+
+        # Checking in Default with deck scope should detect duplicate
+        same_deck_note: NoteInput = {
+            **_note(deck="Default", front="ScopedWord"),
+            "options": {"duplicateScope": "deck"},
+        }
+        result_same = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[same_deck_note])
+        )
+        assert result_same == [
+            {"canAdd": False, "error": "cannot create note because it is a duplicate"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_check_children(self, anki_wrapper):
+        """Test duplicateScopeOptions.checkChildren checks child decks."""
+        anki_wrapper.create_deck("Parent::Child")
+        anki_wrapper.add_note(_note(deck="Parent::Child", front="ChildWord"))
+
+        # Checking Parent with checkChildren=False -> not duplicate
+        parent_no_children: NoteInput = {
+            **_note(deck="Parent", front="ChildWord"),
+            "options": {"duplicateScope": "deck", "duplicateScopeOptions": {"checkChildren": False}},
+        }
+        res_no_children = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[parent_no_children])
+        )
+        assert res_no_children == [{"canAdd": True}]
+
+        # Checking Parent with checkChildren=True -> duplicate
+        parent_with_children: NoteInput = {
+            **_note(deck="Parent", front="ChildWord"),
+            "options": {"duplicateScope": "deck", "duplicateScopeOptions": {"checkChildren": True}},
+        }
+        res_with_children = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[parent_with_children])
+        )
+        assert res_with_children == [
+            {"canAdd": False, "error": "cannot create note because it is a duplicate"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_check_all_models(self, anki_wrapper):
+        """Test duplicateScopeOptions.checkAllModels checks across different models."""
+        anki_wrapper.add_note(_note(model="Basic", front="CrossModelWord"))
+
+        # Different model note with same first field content
+        other_model_note: NoteInput = {
+            "deckName": "Default",
+            "modelName": "Basic (and reversed card)",
+            "fields": {"Front": "CrossModelWord", "Back": "Other"},
+        }
+
+        # By default (different models), not a duplicate
+        res_default = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[other_model_note])
+        )
+        assert res_default == [{"canAdd": True}]
+
+        # With checkAllModels=True, detected as duplicate
+        other_all_models: NoteInput = {
+            **other_model_note,
+            "options": {"duplicateScopeOptions": {"checkAllModels": True}},
+        }
+        res_all_models = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[other_all_models])
+        )
+        assert res_all_models == [
+            {"canAdd": False, "error": "cannot create note because it is a duplicate"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_notes_with_error_detail_invalid_options(self, anki_wrapper):
+        """Test non-boolean option values produce expected error messages."""
+        note_bad_allow_dupe: NoteInput = {
+            **_note(),
+            "options": {"allowDuplicate": "yes"},  # type: ignore[typeddict-item]
+        }
+        res1 = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[note_bad_allow_dupe])
+        )
+        assert res1 == [{"canAdd": False, "error": 'option parameter "allowDuplicate" must be boolean'}]
+
+        note_bad_children: NoteInput = {
+            **_note(),
+            "options": {"duplicateScope": "deck", "duplicateScopeOptions": {"checkChildren": "yes"}},  # type: ignore[typeddict-item]
+        }
+        res2 = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[note_bad_children])
+        )
+        assert res2 == [
+            {"canAdd": False, "error": 'option parameter "duplicateScopeOptions.checkChildren" must be boolean'}
+        ]
+
+        note_bad_models: NoteInput = {
+            **_note(),
+            "options": {"duplicateScopeOptions": {"checkAllModels": "yes"}},  # type: ignore[typeddict-item]
+        }
+        res3 = await handle_can_add_notes_with_error_detail(
+            anki_wrapper, AddNotesParams(notes=[note_bad_models])
+        )
+        assert res3 == [
+            {"canAdd": False, "error": 'option parameter "duplicateScopeOptions.checkAllModels" must be boolean'}
+        ]
 
     @pytest.mark.asyncio
     async def test_handle_find_notes(self, anki_wrapper):
@@ -829,3 +1034,11 @@ class TestValidationErrors:
 
         with pytest.raises(ValueError):
             await dispatch("canAddNotes", {}, anki_wrapper)
+
+    @pytest.mark.asyncio
+    async def test_can_add_notes_with_error_detail_missing_notes(self, anki_wrapper):
+        """Test canAddNotesWithErrorDetail without notes param raises error."""
+        from anki_connect_server.handlers import dispatch
+
+        with pytest.raises(ValueError):
+            await dispatch("canAddNotesWithErrorDetail", {}, anki_wrapper)
