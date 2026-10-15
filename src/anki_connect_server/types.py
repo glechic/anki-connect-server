@@ -1,4 +1,4 @@
-from typing import Any, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -185,6 +185,19 @@ class CardsIdsParams(_BaseParams):
 class GetIntervalsParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
     complete: bool = False
+
+
+class CardAnswer(BaseModel):
+    """A single card rating inside answerCards. ease: 1=Again, 2=Hard,
+    3=Good, 4=Easy."""
+
+    model_config = ConfigDict(extra="forbid")
+    cardId: int
+    ease: Literal[1, 2, 3, 4]
+
+
+class AnswerCardsParams(_BaseParams):
+    answers: list[CardAnswer] = Field(default_factory=list)
 
 
 class StoreMediaFileParams(_BaseParams):

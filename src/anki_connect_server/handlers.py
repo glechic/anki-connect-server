@@ -11,6 +11,7 @@ from anki_connect_server.types import (
     AddNoteParams,
     AddNotesParams,
     AddTagsParams,
+    AnswerCardsParams,
     CardsIdsParams,
     ChangeDeckParams,
     CloneDeckConfigIdParams,
@@ -276,6 +277,11 @@ async def handle_get_intervals(wrapper: AnkiWrapper, params: GetIntervalsParams)
     return await _run(wrapper.get_intervals, params.cards, params.complete)
 
 
+async def handle_answer_cards(wrapper: AnkiWrapper, params: AnswerCardsParams) -> bool:
+    payload: list[JsonObject] = [answer.model_dump() for answer in params.answers]
+    return await _run(wrapper.answer_cards, payload)
+
+
 async def handle_get_media_dir_path(wrapper: AnkiWrapper, params: EmptyParams) -> str:
     _ = (wrapper, params)
     return await _run(wrapper.get_media_dir_path)
@@ -380,6 +386,7 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "unsuspend": (CardsIdsParams, handle_unsuspend),
     "areSuspended": (CardsIdsParams, handle_are_suspended),
     "areDue": (CardsIdsParams, handle_are_due),
+    "answerCards": (AnswerCardsParams, handle_answer_cards),
     "getIntervals": (GetIntervalsParams, handle_get_intervals),
     "getMediaDirPath": (EmptyParams, handle_get_media_dir_path),
     "storeMediaFile": (StoreMediaFileParams, handle_store_media_file),
