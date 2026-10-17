@@ -25,6 +25,7 @@ from anki_connect_server.types import (
     EmptyParams,
     ExportPackageParams,
     FilenameParams,
+    FindAndReplaceInModelsParams,
     FindCardsParams,
     FindNotesParams,
     GetCollectionStatsHTMLParams,
@@ -38,9 +39,20 @@ from anki_connect_server.types import (
     InsertReviewsParams,
     JsonObject,
     JsonValue,
+    ModelFieldAddParams,
+    ModelFieldRemoveParams,
+    ModelFieldRenameParams,
+    ModelFieldRepositionParams,
+    ModelFieldSetDescriptionParams,
+    ModelFieldSetFontParams,
+    ModelFieldSetFontSizeParams,
     ModelIdParams,
     ModelNameParams,
     ModelStylingUpdateParams,
+    ModelTemplateAddParams,
+    ModelTemplateRemoveParams,
+    ModelTemplateRenameParams,
+    ModelTemplateRepositionParams,
     ModelTemplateUpdateParams,
     MultiParams,
     NotesIdsParams,
@@ -216,6 +228,106 @@ async def handle_update_model_styling(
     wrapper: AnkiWrapper, params: ModelStylingUpdateParams
 ) -> None:
     await _run(wrapper.update_model_styling, params.model)
+
+
+async def handle_model_field_add(wrapper: AnkiWrapper, params: ModelFieldAddParams) -> None:
+    await _run(wrapper.model_field_add, params.modelName, params.fieldName, params.index)
+
+
+async def handle_model_field_remove(wrapper: AnkiWrapper, params: ModelFieldRemoveParams) -> None:
+    await _run(wrapper.model_field_remove, params.modelName, params.fieldName)
+
+
+async def handle_model_field_rename(wrapper: AnkiWrapper, params: ModelFieldRenameParams) -> None:
+    await _run(
+        wrapper.model_field_rename, params.modelName, params.oldFieldName, params.newFieldName
+    )
+
+
+async def handle_model_field_reposition(
+    wrapper: AnkiWrapper, params: ModelFieldRepositionParams
+) -> None:
+    await _run(wrapper.model_field_reposition, params.modelName, params.fieldName, params.index)
+
+
+async def handle_model_field_set_font(
+    wrapper: AnkiWrapper, params: ModelFieldSetFontParams
+) -> None:
+    await _run(wrapper.model_field_set_font, params.modelName, params.fieldName, params.font)
+
+
+async def handle_model_field_set_font_size(
+    wrapper: AnkiWrapper, params: ModelFieldSetFontSizeParams
+) -> None:
+    await _run(
+        wrapper.model_field_set_font_size, params.modelName, params.fieldName, params.fontSize
+    )
+
+
+async def handle_model_field_set_description(
+    wrapper: AnkiWrapper, params: ModelFieldSetDescriptionParams
+) -> bool:
+    return await _run(
+        wrapper.model_field_set_description,
+        params.modelName,
+        params.fieldName,
+        params.description,
+    )
+
+
+async def handle_model_field_descriptions(
+    wrapper: AnkiWrapper, params: ModelNameParams
+) -> list[str]:
+    return await _run(wrapper.model_field_descriptions, params.modelName)
+
+
+async def handle_model_field_fonts(
+    wrapper: AnkiWrapper, params: ModelNameParams
+) -> dict[str, JsonObject]:
+    return await _run(wrapper.model_field_fonts, params.modelName)
+
+
+async def handle_model_template_add(wrapper: AnkiWrapper, params: ModelTemplateAddParams) -> None:
+    await _run(wrapper.model_template_add, params.modelName, params.template)
+
+
+async def handle_model_template_remove(
+    wrapper: AnkiWrapper, params: ModelTemplateRemoveParams
+) -> None:
+    await _run(wrapper.model_template_remove, params.modelName, params.templateName)
+
+
+async def handle_model_template_rename(
+    wrapper: AnkiWrapper, params: ModelTemplateRenameParams
+) -> None:
+    await _run(
+        wrapper.model_template_rename,
+        params.modelName,
+        params.oldTemplateName,
+        params.newTemplateName,
+    )
+
+
+async def handle_model_template_reposition(
+    wrapper: AnkiWrapper, params: ModelTemplateRepositionParams
+) -> None:
+    await _run(
+        wrapper.model_template_reposition, params.modelName, params.templateName, params.index
+    )
+
+
+async def handle_find_and_replace_in_models(
+    wrapper: AnkiWrapper, params: FindAndReplaceInModelsParams
+) -> int:
+    return await _run(
+        wrapper.find_and_replace_in_models,
+        params.modelName,
+        params.findText,
+        params.replaceText,
+        params.front,
+        params.back,
+        params.css,
+    )
 
 
 async def handle_add_note(wrapper: AnkiWrapper, params: AddNoteParams) -> int | None:
@@ -509,6 +621,23 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "modelStyling": (ModelNameParams, handle_model_styling),
     "updateModelTemplates": (ModelTemplateUpdateParams, handle_update_model_templates),
     "updateModelStyling": (ModelStylingUpdateParams, handle_update_model_styling),
+    "modelFieldAdd": (ModelFieldAddParams, handle_model_field_add),
+    "modelFieldRemove": (ModelFieldRemoveParams, handle_model_field_remove),
+    "modelFieldRename": (ModelFieldRenameParams, handle_model_field_rename),
+    "modelFieldReposition": (ModelFieldRepositionParams, handle_model_field_reposition),
+    "modelFieldSetFont": (ModelFieldSetFontParams, handle_model_field_set_font),
+    "modelFieldSetFontSize": (ModelFieldSetFontSizeParams, handle_model_field_set_font_size),
+    "modelFieldSetDescription": (
+        ModelFieldSetDescriptionParams,
+        handle_model_field_set_description,
+    ),
+    "modelFieldDescriptions": (ModelNameParams, handle_model_field_descriptions),
+    "modelFieldFonts": (ModelNameParams, handle_model_field_fonts),
+    "modelTemplateAdd": (ModelTemplateAddParams, handle_model_template_add),
+    "modelTemplateRemove": (ModelTemplateRemoveParams, handle_model_template_remove),
+    "modelTemplateRename": (ModelTemplateRenameParams, handle_model_template_rename),
+    "modelTemplateReposition": (ModelTemplateRepositionParams, handle_model_template_reposition),
+    "findAndReplaceInModels": (FindAndReplaceInModelsParams, handle_find_and_replace_in_models),
     "addNote": (AddNoteParams, handle_add_note),
     "addNotes": (AddNotesParams, handle_add_notes),
     "canAddNote": (AddNoteParams, handle_can_add_note),

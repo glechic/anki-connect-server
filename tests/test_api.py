@@ -99,6 +99,93 @@ async def test_model_field_names_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_model_field_rename_action(app_with_wrapper):
+    """Test modelFieldRename action."""
+    app_with_wrapper.create_model(
+        "M5RenameModel",
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "modelFieldRename",
+                "version": 6,
+                "params": {
+                    "modelName": "M5RenameModel",
+                    "oldFieldName": "Back",
+                    "newFieldName": "Reverse",
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] is None
+        assert data["error"] is None
+    assert "Reverse" in app_with_wrapper.model_field_names("M5RenameModel")
+
+
+@pytest.mark.asyncio
+async def test_find_and_replace_in_models_action(app_with_wrapper):
+    """Test findAndReplaceInModels action."""
+    app_with_wrapper.create_model(
+        "M5ReplaceModel",
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "findAndReplaceInModels",
+                "version": 6,
+                "params": {
+                    "modelName": "M5ReplaceModel",
+                    "findText": "MARKER",
+                    "replaceText": "CHANGED",
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == 1
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_model_template_add_invalid_action_error_envelope(app_with_wrapper):
+    """Invalid template data is reported in the error envelope, not as a 500.
+
+    anki's CardTypeError for a front with no field replacement is caused by
+    client-supplied data, so it must surface as {"result": null, "error": ...}
+    with HTTP 200 like any other AnkiConnect action error.
+    """
+    app_with_wrapper.create_model(
+        "M5InvalidModel",
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "modelTemplateAdd",
+                "version": 6,
+                "params": {
+                    "modelName": "M5InvalidModel",
+                    "template": {"Name": "Broken", "Front": "no fields here", "Back": "{{Front}}"},
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] is None
+        assert isinstance(data["error"], str)
+        assert "field replacement" in data["error"]
+
+
+@pytest.mark.asyncio
 async def test_add_note_action(app_with_wrapper):
     """Test addNote action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

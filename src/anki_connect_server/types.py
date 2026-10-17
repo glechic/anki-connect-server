@@ -136,6 +136,79 @@ class ModelStylingUpdateParams(_BaseParams):
     model: ModelStylingUpdate
 
 
+class ModelFieldAddParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    index: int | None = None
+
+
+class ModelFieldRemoveParams(_BaseParams):
+    modelName: str
+    fieldName: str
+
+
+class ModelFieldRenameParams(_BaseParams):
+    modelName: str
+    oldFieldName: str
+    newFieldName: str
+
+
+class ModelFieldRepositionParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    index: int
+
+
+class ModelFieldSetFontParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    font: str
+
+
+class ModelFieldSetFontSizeParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    fontSize: int
+
+
+class ModelFieldSetDescriptionParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    description: str
+
+
+class ModelTemplateAddParams(_BaseParams):
+    modelName: str
+    template: CardTemplateInput
+
+
+class ModelTemplateRemoveParams(_BaseParams):
+    modelName: str
+    templateName: str
+
+
+class ModelTemplateRenameParams(_BaseParams):
+    modelName: str
+    oldTemplateName: str
+    newTemplateName: str
+
+
+class ModelTemplateRepositionParams(_BaseParams):
+    modelName: str
+    templateName: str
+    index: int
+
+
+class FindAndReplaceInModelsParams(_BaseParams):
+    # An empty modelName means every model in the collection.
+    modelName: str = ""
+    findText: str
+    replaceText: str
+    front: bool = True
+    back: bool = True
+    css: bool = True
+
+
 class NoteFieldUpdate(BaseModel):
     """A single field update inside updateNoteFields."""
 

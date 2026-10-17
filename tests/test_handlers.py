@@ -2,11 +2,13 @@
 
 import base64
 import time
+from typing import cast
 
 import pytest
 from anki.cards import CardId
 from pydantic import ValidationError
 
+from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.handlers import (
     API_VERSION,
     handle_add_note,
@@ -30,6 +32,7 @@ from anki_connect_server.handlers import (
     handle_deck_names_and_ids,
     handle_delete_decks,
     handle_delete_notes,
+    handle_find_and_replace_in_models,
     handle_find_cards,
     handle_find_notes,
     handle_forget_cards,
@@ -46,12 +49,25 @@ from anki_connect_server.handlers import (
     handle_get_num_cards_reviewed_today,
     handle_get_reviews_of_cards,
     handle_insert_reviews,
+    handle_model_field_add,
+    handle_model_field_descriptions,
+    handle_model_field_fonts,
     handle_model_field_names,
+    handle_model_field_remove,
+    handle_model_field_rename,
+    handle_model_field_reposition,
+    handle_model_field_set_description,
+    handle_model_field_set_font,
+    handle_model_field_set_font_size,
     handle_model_fields_on_templates,
     handle_model_name_from_id,
     handle_model_names,
     handle_model_names_and_ids,
     handle_model_styling,
+    handle_model_template_add,
+    handle_model_template_remove,
+    handle_model_template_rename,
+    handle_model_template_reposition,
     handle_multi,
     handle_notes_info,
     handle_relearn_cards,
@@ -86,6 +102,7 @@ from anki_connect_server.types import (
     DeleteDecksParams,
     EmptyParams,
     FilenameParams,
+    FindAndReplaceInModelsParams,
     FindCardsParams,
     FindNotesParams,
     GetCollectionStatsHTMLParams,
@@ -94,8 +111,19 @@ from anki_connect_server.types import (
     GetMediaFilesNamesParams,
     GetNoteTagsParams,
     InsertReviewsParams,
+    ModelFieldAddParams,
+    ModelFieldRemoveParams,
+    ModelFieldRenameParams,
+    ModelFieldRepositionParams,
+    ModelFieldSetDescriptionParams,
+    ModelFieldSetFontParams,
+    ModelFieldSetFontSizeParams,
     ModelIdParams,
     ModelNameParams,
+    ModelTemplateAddParams,
+    ModelTemplateRemoveParams,
+    ModelTemplateRenameParams,
+    ModelTemplateRepositionParams,
     MultiParams,
     NoteFieldUpdate,
     NoteInput,
@@ -118,6 +146,19 @@ def _note(
         "modelName": model,
         "fields": {"Front": front, "Back": back},
     }
+
+
+def _test_model(wrapper: AnkiWrapper, name: str = "M5Model") -> str:
+    """Create a dedicated model so field/template mutations leave Basic intact.
+
+    Each test runs against a fresh collection, so a fixed name is safe.
+    """
+    wrapper.create_model(
+        name,
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+    )
+    return name
 
 
 class TestMiscHandlers:
@@ -259,6 +300,288 @@ class TestModelHandlers:
             anki_wrapper, ModelNameParams(modelName="NoSuchModel")
         )
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_add(self, anki_wrapper):
+        """modelFieldAdd adds a field; an index repositions even existing fields."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_add(
+            anki_wrapper, ModelFieldAddParams(modelName=name, fieldName="Extra")
+        )
+        assert anki_wrapper.model_field_names(name) == ["Front", "Back", "Extra"]
+
+        # Adding an existing field with an index repositions it instead.
+        await handle_model_field_add(
+            anki_wrapper, ModelFieldAddParams(modelName=name, fieldName="Extra", index=0)
+        )
+        assert anki_wrapper.model_field_names(name) == ["Extra", "Front", "Back"]
+
+        # Adding an existing field without an index is a no-op.
+        await handle_model_field_add(
+            anki_wrapper, ModelFieldAddParams(modelName=name, fieldName="Extra")
+        )
+        assert anki_wrapper.model_field_names(name) == ["Extra", "Front", "Back"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_remove(self, anki_wrapper):
+        """modelFieldRemove removes a field; a missing field raises."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_remove(
+            anki_wrapper, ModelFieldRemoveParams(modelName=name, fieldName="Back")
+        )
+        assert anki_wrapper.model_field_names(name) == ["Front"]
+        with pytest.raises(ValueError, match="field was not found in"):
+            await handle_model_field_remove(
+                anki_wrapper, ModelFieldRemoveParams(modelName=name, fieldName="Back")
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_rename(self, anki_wrapper):
+        """modelFieldRename renames a field."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_rename(
+            anki_wrapper,
+            ModelFieldRenameParams(modelName=name, oldFieldName="Back", newFieldName="Reverse"),
+        )
+        fields = anki_wrapper.model_field_names(name)
+        assert "Reverse" in fields
+        assert "Back" not in fields
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_reposition(self, anki_wrapper):
+        """modelFieldReposition moves a field to the requested index."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_reposition(
+            anki_wrapper, ModelFieldRepositionParams(modelName=name, fieldName="Back", index=0)
+        )
+        assert anki_wrapper.model_field_names(name) == ["Back", "Front"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_set_font_and_size(self, anki_wrapper):
+        """modelFieldSetFont/SetFontSize changes are visible via modelFieldFonts."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_set_font(
+            anki_wrapper, ModelFieldSetFontParams(modelName=name, fieldName="Front", font="Courier")
+        )
+        await handle_model_field_set_font_size(
+            anki_wrapper,
+            ModelFieldSetFontSizeParams(modelName=name, fieldName="Front", fontSize=42),
+        )
+        fonts = await handle_model_field_fonts(anki_wrapper, ModelNameParams(modelName=name))
+        assert fonts["Front"] == {"font": "Courier", "size": 42}
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_set_description(self, anki_wrapper):
+        """modelFieldSetDescription returns True and persists the description."""
+        name = _test_model(anki_wrapper)
+        result = await handle_model_field_set_description(
+            anki_wrapper,
+            ModelFieldSetDescriptionParams(
+                modelName=name, fieldName="Front", description="The front"
+            ),
+        )
+        assert result is True
+        descriptions = await handle_model_field_descriptions(
+            anki_wrapper, ModelNameParams(modelName=name)
+        )
+        assert descriptions[0] == "The front"
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_descriptions(self, anki_wrapper):
+        """modelFieldDescriptions returns descriptions in field order."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_set_description(
+            anki_wrapper,
+            ModelFieldSetDescriptionParams(modelName=name, fieldName="Front", description="First"),
+        )
+        await handle_model_field_set_description(
+            anki_wrapper,
+            ModelFieldSetDescriptionParams(modelName=name, fieldName="Back", description="Second"),
+        )
+        result = await handle_model_field_descriptions(
+            anki_wrapper, ModelNameParams(modelName=name)
+        )
+        assert result == ["First", "Second"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_fonts(self, anki_wrapper):
+        """modelFieldFonts is keyed by field name with font/size values."""
+        name = _test_model(anki_wrapper)
+        result = await handle_model_field_fonts(anki_wrapper, ModelNameParams(modelName=name))
+        assert set(result) == {"Front", "Back"}
+        for entry in result.values():
+            assert set(entry) == {"font", "size"}
+            assert isinstance(entry["font"], str)
+            assert isinstance(entry["size"], int)
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_add(self, anki_wrapper):
+        """modelTemplateAdd adds a template; the same Name updates it in place.
+
+        The in-place update persists: upstream returns without saving in that
+        path, silently losing the change, which this server fixes.
+        """
+        name = _test_model(anki_wrapper)
+        params = ModelTemplateAddParams(
+            modelName=name,
+            template={"Name": "Card 2", "Front": "{{Front}} 2", "Back": "{{Back}} 2"},
+        )
+        await handle_model_template_add(anki_wrapper, params)
+        templates = anki_wrapper.model_templates(name)
+        assert len(templates) == 2
+        assert templates["Card 2"] == {"Front": "{{Front}} 2", "Back": "{{Back}} 2"}
+
+        update = ModelTemplateAddParams(
+            modelName=name,
+            template={"Name": "Card 2", "Front": "New {{Front}}", "Back": "New Back"},
+        )
+        await handle_model_template_add(anki_wrapper, update)
+        templates = anki_wrapper.model_templates(name)
+        assert len(templates) == 2
+        assert templates["Card 2"] == {"Front": "New {{Front}}", "Back": "New Back"}
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_add_invalid_front_raises(self, anki_wrapper):
+        """modelTemplateAdd with a fieldless front raises a client-facing error.
+
+        anki 26.8's update_dict rejects a front with no field replacement; the
+        wrapper re-raises it as ValueError so the API layer reports it in the
+        AnkiConnect error envelope instead of a 500.
+        """
+        name = _test_model(anki_wrapper)
+        with pytest.raises(ValueError, match="field replacement"):
+            await handle_model_template_add(
+                anki_wrapper,
+                ModelTemplateAddParams(
+                    modelName=name,
+                    template={"Name": "Broken", "Front": "no fields here", "Back": "{{Front}}"},
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_remove(self, anki_wrapper):
+        """modelTemplateRemove removes a template; a missing one raises."""
+        name = _test_model(anki_wrapper)
+        await handle_model_template_add(
+            anki_wrapper,
+            ModelTemplateAddParams(
+                modelName=name,
+                template={"Name": "Card 2", "Front": "{{Front}} 2", "Back": "{{Back}}"},
+            ),
+        )
+        await handle_model_template_remove(
+            anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 2")
+        )
+        assert list(anki_wrapper.model_templates(name)) == ["Card 1"]
+        with pytest.raises(ValueError, match="template was not found in"):
+            await handle_model_template_remove(
+                anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 2")
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_rename(self, anki_wrapper):
+        """modelTemplateRename renames a template."""
+        name = _test_model(anki_wrapper)
+        await handle_model_template_rename(
+            anki_wrapper,
+            ModelTemplateRenameParams(
+                modelName=name, oldTemplateName="Card 1", newTemplateName="Renamed"
+            ),
+        )
+        templates = anki_wrapper.model_templates(name)
+        assert "Renamed" in templates
+        assert "Card 1" not in templates
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_reposition(self, anki_wrapper):
+        """modelTemplateReposition moves a template to the requested index."""
+        name = _test_model(anki_wrapper)
+        await handle_model_template_add(
+            anki_wrapper,
+            ModelTemplateAddParams(
+                modelName=name,
+                template={"Name": "Card 2", "Front": "{{Front}} 2", "Back": "{{Back}}"},
+            ),
+        )
+        await handle_model_template_reposition(
+            anki_wrapper,
+            ModelTemplateRepositionParams(modelName=name, templateName="Card 2", index=0),
+        )
+        assert list(anki_wrapper.model_templates(name)) == ["Card 2", "Card 1"]
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models(self, anki_wrapper):
+        """findAndReplaceInModels replaces template text and counts the model."""
+        anki_wrapper.create_model(
+            "M5Replace",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+        )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Replace", findText="MARKER", replaceText="CHANGED"
+            ),
+        )
+        assert result == 1
+        templates = anki_wrapper.model_templates("M5Replace")
+        assert templates["Card 1"]["Front"] == "CHANGED {{Front}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_all_models(self, anki_wrapper):
+        """An empty modelName counts every model containing the text."""
+        for model_name in ("M5AllA", "M5AllB"):
+            anki_wrapper.create_model(
+                model_name,
+                ["Front", "Back"],
+                [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+            )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(modelName="", findText="MARKER", replaceText="CHANGED"),
+        )
+        assert result == 2
+        assert anki_wrapper.model_templates("M5AllA")["Card 1"]["Front"] == "CHANGED {{Front}}"
+        assert anki_wrapper.model_templates("M5AllB")["Card 1"]["Front"] == "CHANGED {{Front}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_flags(self, anki_wrapper):
+        """css=False skips the CSS while the front template is still replaced."""
+        anki_wrapper.create_model(
+            "M5Flags",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+            css=".card { color: MARKER; }",
+        )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Flags", findText="MARKER", replaceText="CHANGED", css=False
+            ),
+        )
+        assert result == 1
+        assert "MARKER" in cast(str, anki_wrapper.model_styling("M5Flags")["css"])
+        templates = anki_wrapper.model_templates("M5Flags")
+        assert templates["Card 1"]["Front"] == "CHANGED {{Front}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_missing_model_raises(self, anki_wrapper):
+        """findAndReplaceInModels raises for a missing named model."""
+        with pytest.raises(ValueError, match="model was not found"):
+            await handle_find_and_replace_in_models(
+                anki_wrapper,
+                FindAndReplaceInModelsParams(
+                    modelName="NoSuchModel", findText="x", replaceText="y"
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_model_actions_missing_model_raises(self, anki_wrapper):
+        """A representative model action raises upstream's missing-model error."""
+        with pytest.raises(ValueError, match="model was not found: NoSuchModel"):
+            await handle_model_field_add(
+                anki_wrapper, ModelFieldAddParams(modelName="NoSuchModel", fieldName="X")
+            )
 
 
 class TestNoteHandlers:

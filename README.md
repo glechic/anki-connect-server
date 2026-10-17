@@ -248,6 +248,20 @@ curl -X POST http://localhost:8765/api \
 - `modelStyling` - Get CSS styling
 - `updateModelTemplates` - Update templates
 - `updateModelStyling` - Update CSS
+- `modelFieldAdd` - Add a field to a model (optionally positioned at an index)
+- `modelFieldRemove` - Remove a field from a model (destroys that field's data in all notes)
+- `modelFieldRename` - Rename a model field
+- `modelFieldReposition` - Move a field to a new position
+- `modelFieldSetFont` - Set a field's font
+- `modelFieldSetFontSize` - Set a field's font size
+- `modelFieldSetDescription` - Set a field's description
+- `modelFieldDescriptions` - Get field descriptions
+- `modelFieldFonts` - Get per-field font and size
+- `modelTemplateAdd` - Add or update a card template
+- `modelTemplateRemove` - Remove a card template (a model must keep at least one)
+- `modelTemplateRename` - Rename a card template
+- `modelTemplateReposition` - Move a card template to a new position
+- `findAndReplaceInModels` - Find and replace text in templates/CSS across models (empty modelName = all models)
 
 #### Notes
 - `addNote` - Add a single note

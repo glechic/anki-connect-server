@@ -19,7 +19,7 @@ from anki.collection import Collection, StripHtmlMode
 from anki.cards import CardId
 from anki.consts import CARD_TYPE_RELEARNING, QUEUE_TYPE_LRN
 from anki.decks import DeckConfigDict, DeckConfigId, DeckId, DeckTreeNode
-from anki.errors import NotFoundError
+from anki.errors import CardTypeError, NotFoundError
 from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
 from anki.notes import Note, NoteId
 from anki.sync_pb2 import MediaSyncStatusResponse, SyncCollectionResponse
@@ -34,7 +34,7 @@ from anki_connect_server.sync import (
     SyncError,
     SyncResult,
 )
-from anki_connect_server.types import JsonObject, JsonValue
+from anki_connect_server.types import CardTemplateInput, JsonObject, JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -397,6 +397,40 @@ class AnkiWrapper:
     def _model_templates(self, model: NotetypeDict) -> list[TemplateDict]:
         return cast(list[TemplateDict], model.get("tmpls", []))
 
+    def _get_model_or_raise(self, model_name: str) -> NotetypeDict:
+        """Get model dict by name, raising upstream's error if missing."""
+        model = self._get_model_by_name(model_name)
+        if model is None:
+            raise ValueError(f"model was not found: {model_name}")
+        return model
+
+    def _save_model(self, model: NotetypeDict) -> None:
+        """Persist a model, surfacing template-validation failures as client errors.
+
+        update_dict() raises CardTypeError for invalid client-supplied template
+        data (e.g. a front with no field replacement); re-raise it as ValueError
+        so the API layer reports it in the AnkiConnect error envelope instead of
+        a 500.
+        """
+        try:
+            self.col.models.update_dict(model)
+        except CardTypeError as e:
+            raise ValueError(str(e)) from e
+
+    def _get_field_or_raise(self, model: NotetypeDict, field_name: str) -> FieldDict:
+        """Get field dict by name, raising upstream's error if missing."""
+        for field in self._model_fields(model):
+            if field["name"] == field_name:
+                return field
+        raise ValueError(f"field was not found in {model['name']}: {field_name}")
+
+    def _get_template_or_raise(self, model: NotetypeDict, template_name: str) -> TemplateDict:
+        """Get template dict by name, raising upstream's error if missing."""
+        for template in self._model_templates(model):
+            if template["name"] == template_name:
+                return template
+        raise ValueError(f"template was not found in {model['name']}: {template_name}")
+
     def model_field_names(self, model_name: str) -> list[str]:
         model = self._get_model_by_name(model_name)
         if not model:
@@ -535,6 +569,175 @@ class AnkiWrapper:
         if "css" in model:
             notetype["css"] = cast(str, model["css"])
         self.col.models.update(notetype)
+
+    def model_field_add(self, model_name: str, field_name: str, index: int | None = None) -> None:
+        """Add a field to a model, optionally positioned at an index (upstream parity).
+
+        An existing field is not added twice, but an index still repositions
+        it; the model is saved on every call.
+        """
+        model = self._get_model_or_raise(model_name)
+        if field_name not in self.col.models.field_map(model):
+            self.col.models.add_field(model, self.col.models.new_field(field_name))
+        if index is not None:
+            field_map = self.col.models.field_map(model)
+            self.col.models.reposition_field(model, field_map[field_name][1], index)
+        self._save_model(model)
+
+    def model_field_remove(self, model_name: str, field_name: str) -> None:
+        """Remove a field from a model (upstream parity).
+
+        Dangerous: removing a field destroys that field's data in every note
+        using the model.
+        """
+        model = self._get_model_or_raise(model_name)
+        field = self._get_field_or_raise(model, field_name)
+        self.col.models.remove_field(model, field)
+        self._save_model(model)
+
+    def model_field_rename(self, model_name: str, old_field_name: str, new_field_name: str) -> None:
+        """Rename a model field (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        field = self._get_field_or_raise(model, old_field_name)
+        self.col.models.rename_field(model, field, new_field_name)
+        self._save_model(model)
+
+    def model_field_reposition(self, model_name: str, field_name: str, index: int) -> None:
+        """Move a field to a new position (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        field = self._get_field_or_raise(model, field_name)
+        self.col.models.reposition_field(model, field, index)
+        self._save_model(model)
+
+    def model_field_set_font(self, model_name: str, field_name: str, font: str) -> None:
+        """Set a field's font (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        field = self._get_field_or_raise(model, field_name)
+        field["font"] = font
+        self._save_model(model)
+
+    def model_field_set_font_size(self, model_name: str, field_name: str, font_size: int) -> None:
+        """Set a field's font size (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        field = self._get_field_or_raise(model, field_name)
+        field["size"] = font_size
+        self._save_model(model)
+
+    def model_field_set_description(
+        self, model_name: str, field_name: str, description: str
+    ) -> bool:
+        """Set a field's description, returning whether it was set (upstream parity).
+
+        Upstream returns False only when the field lacks a 'description' key,
+        which happens solely on ancient Anki versions; anki 26.8 fields always
+        have one, so this returns True unconditionally.
+        """
+        model = self._get_model_or_raise(model_name)
+        field = self._get_field_or_raise(model, field_name)
+        field["description"] = description
+        self._save_model(model)
+        return True
+
+    def model_field_descriptions(self, model_name: str) -> list[str]:
+        """Get field descriptions in field order (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        return [cast(str, f.get("description", "")) for f in self._model_fields(model)]
+
+    def model_field_fonts(self, model_name: str) -> dict[str, JsonObject]:
+        """Get per-field font and size, keyed by field name (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        result: dict[str, JsonObject] = {}
+        for field in self._model_fields(model):
+            result[cast(str, field["name"])] = cast(
+                JsonObject, {"font": field["font"], "size": field["size"]}
+            )
+        return result
+
+    def model_template_add(self, model_name: str, template: CardTemplateInput) -> None:
+        """Add or update a card template (upstream parity, with a fix).
+
+        A template whose name already exists is updated in place. Upstream
+        returns without saving in that path, silently losing the change; this
+        server persists both paths.
+        """
+        model = self._get_model_or_raise(model_name)
+        for tmpl in self._model_templates(model):
+            if tmpl["name"] == template["Name"]:
+                tmpl["qfmt"] = template["Front"]
+                tmpl["afmt"] = template["Back"]
+                self._save_model(model)
+                return
+        new_tmpl = self.col.models.new_template(template["Name"])
+        new_tmpl["qfmt"] = template["Front"]
+        new_tmpl["afmt"] = template["Back"]
+        self.col.models.add_template(model, new_tmpl)
+        self._save_model(model)
+
+    def model_template_remove(self, model_name: str, template_name: str) -> None:
+        """Remove a card template (upstream parity).
+
+        Anki refuses to remove the last remaining template of a model.
+        """
+        model = self._get_model_or_raise(model_name)
+        template = self._get_template_or_raise(model, template_name)
+        self.col.models.remove_template(model, template)
+        self._save_model(model)
+
+    def model_template_rename(
+        self, model_name: str, old_template_name: str, new_template_name: str
+    ) -> None:
+        """Rename a card template (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        template = self._get_template_or_raise(model, old_template_name)
+        template["name"] = new_template_name
+        self._save_model(model)
+
+    def model_template_reposition(self, model_name: str, template_name: str, index: int) -> None:
+        """Move a card template to a new position (upstream parity)."""
+        model = self._get_model_or_raise(model_name)
+        template = self._get_template_or_raise(model, template_name)
+        self.col.models.reposition_template(model, template, index)
+        self._save_model(model)
+
+    def find_and_replace_in_models(
+        self,
+        model_name: str,
+        find_text: str,
+        replace_text: str,
+        front: bool = True,
+        back: bool = True,
+        css: bool = True,
+    ) -> int:
+        """Find and replace text in templates/CSS (upstream parity).
+
+        An empty model_name means every model in the collection. Every
+        visited model is saved (mirroring upstream, which saves
+        unconditionally); the return value counts the models in which at
+        least one replacement happened.
+        """
+        if model_name:
+            self._get_model_or_raise(model_name)
+            names = [model_name]
+        else:
+            names = [m.name for m in self.col.models.all_names_and_ids()]
+        count = 0
+        for name in names:
+            model = self._get_model_or_raise(name)
+            updated = False
+            if css and find_text in cast(str, model["css"]):
+                model["css"] = cast(str, model["css"]).replace(find_text, replace_text)
+                updated = True
+            for tmpl in self._model_templates(model):
+                if front and find_text in cast(str, tmpl["qfmt"]):
+                    tmpl["qfmt"] = cast(str, tmpl["qfmt"]).replace(find_text, replace_text)
+                    updated = True
+                if back and find_text in cast(str, tmpl["afmt"]):
+                    tmpl["afmt"] = cast(str, tmpl["afmt"]).replace(find_text, replace_text)
+                    updated = True
+            self._save_model(model)
+            if updated:
+                count += 1
+        return count
 
     def add_note(self, note: JsonObject) -> int | None:
         model_name = note.get("modelName", "")
