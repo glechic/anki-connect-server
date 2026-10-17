@@ -618,6 +618,80 @@ class TestModelHandlers:
         assert templates["Card 1"]["Front"] == "CHANGED {{Front}}"
 
     @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_css_and_back(self, anki_wrapper):
+        """findAndReplaceInModels replaces CSS and Back (afmt) text, not just Front.
+
+        Distinct markers are used so each replacement provably came from its
+        own branch; each call still counts the model exactly once.
+        """
+        anki_wrapper.create_model(
+            "M5CssBack",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "{{Front}}", "Back": "AFMTMARK {{Back}}"}],
+            css=".card { color: CSSMARK; }",
+        )
+        # The CSS marker is replaced via the css branch.
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5CssBack", findText="CSSMARK", replaceText="CHANGED"
+            ),
+        )
+        assert result == 1
+        css = cast(str, anki_wrapper.model_styling("M5CssBack")["css"])
+        assert "CSSMARK" not in css
+        assert "CHANGED" in css
+
+        # A different marker in the template's Back (afmt) is replaced too.
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5CssBack", findText="AFMTMARK", replaceText="CHANGED"
+            ),
+        )
+        assert result == 1
+        templates = anki_wrapper.model_templates("M5CssBack")
+        assert templates["Card 1"]["Back"] == "CHANGED {{Back}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_flag_gating(self, anki_wrapper):
+        """front/back=False gate the template branches; css=False gates the CSS branch.
+
+        With the template flags off, only the CSS branch fires (count 1) and
+        the afmt keeps its marker; with back=False, an afmt-only marker is
+        left untouched (count 0).
+        """
+        anki_wrapper.create_model(
+            "M5Gate",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "{{Front}}", "Back": "AFMTMARK {{Back}}"}],
+            css=".card { color: CSSMARK; }",
+        )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Gate",
+                findText="CSSMARK",
+                replaceText="CHANGED",
+                front=False,
+                back=False,
+            ),
+        )
+        assert result == 1
+        assert "CSSMARK" not in cast(str, anki_wrapper.model_styling("M5Gate")["css"])
+        assert anki_wrapper.model_templates("M5Gate")["Card 1"]["Back"] == "AFMTMARK {{Back}}"
+
+        # back=False gates the afmt branch: no model is counted as updated.
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Gate", findText="AFMTMARK", replaceText="CHANGED", back=False
+            ),
+        )
+        assert result == 0
+        assert anki_wrapper.model_templates("M5Gate")["Card 1"]["Back"] == "AFMTMARK {{Back}}"
+
+    @pytest.mark.asyncio
     async def test_handle_find_and_replace_in_models_missing_model_raises(self, anki_wrapper):
         """findAndReplaceInModels raises for a missing named model."""
         with pytest.raises(ValueError, match="model was not found"):
@@ -1543,6 +1617,23 @@ class TestCardHandlers:
         card = anki_wrapper.col.get_card(CardId(card_ids[0]))
         assert card.ivl == 100
 
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_length_mismatch(self, anki_wrapper):
+        """Mismatched keys/newValues lengths return False and nothing is applied."""
+        note_id = anki_wrapper.add_note(_note(front="LengthMismatch"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["due"], newValues=[42]),
+        )
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["due"], newValues=[1, 2]),
+        )
+        assert result is False
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.due == 42  # nothing was applied
+
 
 class TestStatsHandlers:
     """Test stats/revlog handlers."""
@@ -1667,6 +1758,18 @@ class TestStatsHandlers:
             )
 
     @pytest.mark.asyncio
+    async def test_handle_insert_reviews_empty_list_is_noop(self, anki_wrapper):
+        """insertReviews with an empty list returns None without touching revlog."""
+        db = anki_wrapper.col.db
+        assert db is not None
+        count_before = int(db.scalar("select count() from revlog"))
+
+        result = await handle_insert_reviews(anki_wrapper, InsertReviewsParams(reviews=[]))
+
+        assert result is None
+        assert int(db.scalar("select count() from revlog")) == count_before
+
+    @pytest.mark.asyncio
     async def test_handle_get_deck_stats(self, anki_wrapper):
         """getDeckStats returns due counts keyed by deck id."""
         anki_wrapper.add_note(_note(front="DeckStats"))
@@ -1722,6 +1825,31 @@ class TestStatsHandlers:
         assert isinstance(result, str)
         assert result
         assert result.startswith("<center")
+
+
+class TestDbNoneGuards:
+    """Pin the wrapper's defensive col.db-is-None early returns."""
+
+    def test_db_none_guards_return_sentinels(self, anki_wrapper, monkeypatch):
+        """Raw-SQL wrapper methods return their documented sentinels when col.db is None.
+
+        col.db is only None after the collection has been closed, so these
+        guards are defensive; pin each sentinel return value so the guards
+        cannot silently regress into AttributeError/TypeError exceptions.
+        monkeypatch restores the real db afterwards, keeping the collection
+        usable for teardown.
+        """
+        monkeypatch.setattr(anki_wrapper.col, "db", None)
+
+        assert anki_wrapper.replace_tags_in_all_notes("a", "b") is None
+        assert anki_wrapper.forget_cards([1]) is None
+        assert anki_wrapper.relearn_cards([1]) is None
+        assert anki_wrapper.card_reviews("Default", 0) == []
+        assert anki_wrapper.get_reviews_of_cards([1]) == {1: []}
+        assert anki_wrapper.get_latest_review_id("Default") == 0
+        assert anki_wrapper.get_num_cards_reviewed_today() == 0
+        assert anki_wrapper.get_num_cards_reviewed_by_day() == []
+        assert anki_wrapper.insert_reviews([[0] * 9]) is None
 
 
 class TestMediaHandlers:
