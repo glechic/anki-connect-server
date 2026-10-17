@@ -148,6 +148,29 @@ async def test_can_add_notes_with_error_detail_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_can_add_note_action(app_with_wrapper):
+    """Test canAddNote action."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "canAddNote",
+                "version": 6,
+                "params": {
+                    "note": {
+                        "deckName": "Default",
+                        "modelName": "Basic",
+                        "fields": {"Front": "CanAddApi", "Back": "World"},
+                    }
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": True, "error": None}
+
+
+@pytest.mark.asyncio
 async def test_find_notes_action(app_with_wrapper):
     """Test findNotes action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -254,6 +277,24 @@ async def test_unsuspend_action(app_with_wrapper):
         assert response.status_code == 200
         data = response.json()
         assert data["result"] is True
+
+
+@pytest.mark.asyncio
+async def test_suspended_action(app_with_wrapper):
+    """Test suspended action."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    anki_wrapper.suspend(card_ids)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "suspended", "version": 6, "params": {"card": card_ids[0]}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": True, "error": None}
 
 
 @pytest.mark.asyncio

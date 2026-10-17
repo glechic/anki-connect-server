@@ -3,8 +3,10 @@
 # anki.cards first triggers a circular import (anki.hooks -> anki.hooks_gen ->
 # anki.cards.Card while anki.cards is still initialising).
 import base64
+import glob
 import hashlib
 import logging
+import os
 import re
 import threading
 import time
@@ -294,6 +296,17 @@ class AnkiWrapper:
         decks = self.col.decks.all_names_and_ids()
         return {d.name: int(d.id) for d in decks}
 
+    def deck_name_from_id(self, deck_id: int) -> str:
+        """Get a deck name by id, raising for a missing deck (upstream parity).
+
+        decks.get(did, default=False) returns None for a missing deck instead
+        of raising, so the None case is turned into upstream's error message.
+        """
+        deck = self.col.decks.get(DeckId(deck_id), default=False)
+        if deck is None:
+            raise ValueError(f"deck was not found: {deck_id}")
+        return cast(str, deck["name"])
+
     def create_deck(self, deck: str) -> int:
         return int(cast(int, self.col.decks.id(deck)))
 
@@ -358,6 +371,17 @@ class AnkiWrapper:
     def model_names_and_ids(self) -> dict[str, int]:
         models = self.col.models.all_names_and_ids()
         return {m.name: int(m.id) for m in models}
+
+    def model_name_from_id(self, model_id: int) -> str:
+        """Get a model name by id, raising for a missing model (upstream parity).
+
+        models.get returns None for a missing model instead of raising, so the
+        None case is turned into upstream's error message.
+        """
+        model = self.col.models.get(NotetypeId(model_id))
+        if model is None:
+            raise ValueError(f"model was not found: {model_id}")
+        return cast(str, model["name"])
 
     def _get_model_by_name(self, model_name: str) -> NotetypeDict | None:
         """Get model dict by name."""
@@ -536,6 +560,10 @@ class AnkiWrapper:
 
     def add_notes(self, notes: list[JsonObject]) -> list[int | None]:
         return [self.add_note(note) for note in notes]
+
+    def can_add_note(self, note: JsonObject) -> bool:
+        """Check whether a single note can be added (upstream parity)."""
+        return bool(self.can_add_note_with_error_detail(note)["canAdd"])
 
     def can_add_notes(self, notes: list[JsonObject]) -> list[bool]:
         return [
@@ -788,6 +816,20 @@ class AnkiWrapper:
     def delete_notes(self, notes: list[int]) -> None:
         self.col.remove_notes([NoteId(n) for n in notes])
 
+    def remove_empty_notes(self) -> None:
+        """Remove note types that have zero notes (upstream parity).
+
+        Despite the name, upstream AnkiConnect's removeEmptyNotes removes
+        unused note types, not notes without cards. The models are snapshotted
+        before removing anything so the collection is not mutated while
+        iterating. We call the modern equivalent of upstream's models.rem()
+        (remove() by id) to avoid the deprecated-alias log noise.
+        """
+        all_models = self.col.models.all()
+        for model in all_models:
+            if self.col.models.use_count(model) == 0:
+                self.col.models.remove(NotetypeId(model["id"]))
+
     def find_cards(self, query: str) -> list[int]:
         return [int(c) for c in self.col.find_cards(query)]
 
@@ -830,6 +872,22 @@ class AnkiWrapper:
             )
         return result
 
+    def cards_mod_time(self, cards: list[int]) -> list[JsonObject]:
+        """Get card modification timestamps (upstream parity).
+
+        A missing card id yields an empty dict so the input and return lists
+        correspond, mirroring upstream AnkiConnect.
+        """
+        result: list[JsonObject] = []
+        for card_id in cards:
+            try:
+                card = self.col.get_card(CardId(card_id))
+            except NotFoundError:
+                result.append({})
+                continue
+            result.append(cast(JsonObject, {"cardId": int(card.id), "mod": int(card.mod)}))
+        return result
+
     def suspend(self, cards: list[int]) -> bool:
         card_ids = [CardId(c) for c in cards]
         if not card_ids:
@@ -841,6 +899,17 @@ class AnkiWrapper:
         card_ids = [CardId(c) for c in cards]
         self.col.sched.unsuspend_cards(card_ids)
         return True
+
+    def suspended(self, card: int) -> bool:
+        """Check whether a single card is suspended (queue == -1).
+
+        Unlike areSuspended, a missing card id is an error (upstream parity).
+        """
+        try:
+            anki_card = self.col.get_card(CardId(card))
+        except NotFoundError as e:
+            raise ValueError(f"Card was not found: {card}") from e
+        return anki_card.queue == -1
 
     def are_suspended(self, cards: list[int]) -> list[bool]:
         result: list[bool] = []
@@ -994,6 +1063,18 @@ class AnkiWrapper:
             result.append(True)
         return result
 
+    def get_ease_factors(self, cards: list[int]) -> list[int | None]:
+        """Get card ease factors (10x the ease percentage), None for missing ids."""
+        result: list[int | None] = []
+        for card_id in cards:
+            try:
+                card = self.col.get_card(CardId(card_id))
+            except NotFoundError:
+                result.append(None)
+                continue
+            result.append(int(card.factor))
+        return result
+
     def set_specific_value_of_card(
         self, card: int, keys: list[str], new_values: list[Any], warning_check: bool = False
     ) -> Any:
@@ -1035,6 +1116,11 @@ class AnkiWrapper:
 
     def get_media_dir_path(self) -> str:
         return self.col.media.dir()
+
+    def get_media_files_names(self, pattern: str = "*") -> list[str]:
+        """List media file names matching a glob pattern (upstream parity)."""
+        path = os.path.join(self.col.media.dir(), pattern)  # noqa: PTH118
+        return [os.path.basename(p) for p in glob.glob(path)]  # noqa: PTH119, PTH207
 
     def store_media_file(self, filename: str, data: str, url: str = "", path: str = "") -> None:
         """Store media from base64 data, a URL, or a server-side file path.

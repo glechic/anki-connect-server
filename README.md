@@ -226,6 +226,7 @@ curl -X POST http://localhost:8765/api \
 #### Decks
 - `deckNames` - Get all deck names
 - `deckNamesAndIds` - Get deck names with IDs
+- `deckNameFromId` - Get a deck name from its ID
 - `createDeck` - Create a new deck
 - `deleteDecks` - Delete decks
 - `changeDeck` - Move cards to different deck
@@ -239,6 +240,7 @@ curl -X POST http://localhost:8765/api \
 #### Models
 - `modelNames` - Get all model names
 - `modelNamesAndIds` - Get model names with IDs
+- `modelNameFromId` - Get a model name from its ID
 - `modelFieldNames` - Get field names for model
 - `modelFieldsOnTemplates` - Get fields used in templates
 - `createModel` - Create a new note model
@@ -250,12 +252,14 @@ curl -X POST http://localhost:8765/api \
 #### Notes
 - `addNote` - Add a single note
 - `addNotes` - Add multiple notes
+- `canAddNote` - Check if a single note can be added
 - `canAddNotes` - Check if notes can be added
 - `updateNoteFields` - Update note fields
 - `updateNote` - Update note fields and/or tags in one call
 - `findNotes` - Search for notes
 - `notesInfo` - Get note details
 - `deleteNotes` - Delete notes
+- `removeEmptyNotes` - Remove unused note types (upstream parity: despite the name, removes note types with zero notes)
 - `addTags` - Add tags to notes
 - `removeTags` - Remove tags from notes
 - `getTags` - Get all tags
@@ -264,19 +268,23 @@ curl -X POST http://localhost:8765/api \
 - `findCards` - Search for cards
 - `cardsToNotes` - Get note IDs from card IDs
 - `cardsInfo` - Get card details
+- `cardsModTime` - Get card modification timestamps
 - `suspend` - Suspend cards
 - `unsuspend` - Unsuspend cards
 - `areSuspended` - Check if cards are suspended
+- `suspended` - Check if a single card is suspended
 - `areDue` - Check if cards are due
 - `getIntervals` - Get card intervals
 - `answerCards` - Answer cards with a given ease (1=Again, 2=Hard, 3=Good, 4=Easy); returns a per-card success list
 - `forgetCards` - Reset cards back to new, clearing all scheduling state
 - `relearnCards` - Move cards into the relearning queue
 - `setEaseFactors` - Set card ease factors (10x the ease percentage, e.g. 3100 = 310%)
+- `getEaseFactors` - Get card ease factors (10x the ease percentage)
 - `setSpecificValueOfCard` - Raw/dangerous: set arbitrary card fields directly (critical fields are refused unless `warning_check` is true)
 
 #### Media
 - `getMediaDirPath` - Get media directory path
+- `getMediaFilesNames` - List media file names matching a glob pattern
 - `storeMediaFile` - Store a media file (base64 `data`, `url`, or server-side `path`)
 - `retrieveMediaFile` - Retrieve a media file
 - `deleteMediaFile` - Delete a media file

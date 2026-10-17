@@ -18,6 +18,7 @@ from anki_connect_server.types import (
     CreateDeckParams,
     CreateModelParams,
     CredentialsParams,
+    DeckIdParams,
     DeleteDecksParams,
     EmptyParams,
     ExportPackageParams,
@@ -27,8 +28,10 @@ from anki_connect_server.types import (
     GetDeckConfigParams,
     GetDecksParams,
     GetIntervalsParams,
+    GetMediaFilesNamesParams,
     ImportPackageParams,
     JsonObject,
+    ModelIdParams,
     ModelNameParams,
     ModelStylingUpdateParams,
     ModelTemplateUpdateParams,
@@ -40,6 +43,7 @@ from anki_connect_server.types import (
     SetEaseFactorsParams,
     SetSpecificValueOfCardParams,
     StoreMediaFileParams,
+    SuspendedParams,
     UpdateNoteFieldsParams,
     UpdateNoteParams,
 )
@@ -125,6 +129,10 @@ async def handle_delete_decks(wrapper: AnkiWrapper, params: DeleteDecksParams) -
     await _run(wrapper.delete_decks, params.decks, params.cardsToo)
 
 
+async def handle_deck_name_from_id(wrapper: AnkiWrapper, params: DeckIdParams) -> str:
+    return await _run(wrapper.deck_name_from_id, params.deckId)
+
+
 async def handle_get_deck_config(wrapper: AnkiWrapper, params: GetDeckConfigParams) -> JsonObject:
     return await _run(wrapper.get_deck_config, params.deck)
 
@@ -155,6 +163,10 @@ async def handle_model_names(wrapper: AnkiWrapper, params: EmptyParams) -> list[
 async def handle_model_names_and_ids(wrapper: AnkiWrapper, params: EmptyParams) -> dict[str, int]:
     _ = (wrapper, params)
     return await _run(wrapper.model_names_and_ids)
+
+
+async def handle_model_name_from_id(wrapper: AnkiWrapper, params: ModelIdParams) -> str:
+    return await _run(wrapper.model_name_from_id, params.modelId)
 
 
 async def handle_model_field_names(wrapper: AnkiWrapper, params: ModelNameParams) -> list[str]:
@@ -204,6 +216,10 @@ async def handle_add_notes(wrapper: AnkiWrapper, params: AddNotesParams) -> list
     return await _run(wrapper.add_notes, params.notes)
 
 
+async def handle_can_add_note(wrapper: AnkiWrapper, params: AddNoteParams) -> bool:
+    return await _run(wrapper.can_add_note, params.note)
+
+
 async def handle_can_add_notes(wrapper: AnkiWrapper, params: AddNotesParams) -> list[bool]:
     return await _run(wrapper.can_add_notes, params.notes)
 
@@ -247,6 +263,11 @@ async def handle_delete_notes(wrapper: AnkiWrapper, params: NotesIdsParams) -> N
     await _run(wrapper.delete_notes, params.notes)
 
 
+async def handle_remove_empty_notes(wrapper: AnkiWrapper, params: EmptyParams) -> None:
+    _ = (wrapper, params)
+    await _run(wrapper.remove_empty_notes)
+
+
 async def handle_find_cards(wrapper: AnkiWrapper, params: FindCardsParams) -> list[int]:
     return await _run(wrapper.find_cards, params.query)
 
@@ -259,12 +280,20 @@ async def handle_cards_info(wrapper: AnkiWrapper, params: CardsIdsParams) -> lis
     return await _run(wrapper.cards_info, params.cards)
 
 
+async def handle_cards_mod_time(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[JsonObject]:
+    return await _run(wrapper.cards_mod_time, params.cards)
+
+
 async def handle_suspend(wrapper: AnkiWrapper, params: CardsIdsParams) -> bool:
     return await _run(wrapper.suspend, params.cards)
 
 
 async def handle_unsuspend(wrapper: AnkiWrapper, params: CardsIdsParams) -> bool:
     return await _run(wrapper.unsuspend, params.cards)
+
+
+async def handle_suspended(wrapper: AnkiWrapper, params: SuspendedParams) -> bool:
+    return await _run(wrapper.suspended, params.card)
 
 
 async def handle_are_suspended(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[bool]:
@@ -295,6 +324,10 @@ async def handle_set_ease_factors(wrapper: AnkiWrapper, params: SetEaseFactorsPa
     return await _run(wrapper.set_ease_factors, params.cards, params.easeFactors)
 
 
+async def handle_get_ease_factors(wrapper: AnkiWrapper, params: CardsIdsParams) -> list[int | None]:
+    return await _run(wrapper.get_ease_factors, params.cards)
+
+
 async def handle_set_specific_value_of_card(
     wrapper: AnkiWrapper, params: SetSpecificValueOfCardParams
 ) -> Any:
@@ -310,6 +343,12 @@ async def handle_set_specific_value_of_card(
 async def handle_get_media_dir_path(wrapper: AnkiWrapper, params: EmptyParams) -> str:
     _ = (wrapper, params)
     return await _run(wrapper.get_media_dir_path)
+
+
+async def handle_get_media_files_names(
+    wrapper: AnkiWrapper, params: GetMediaFilesNamesParams
+) -> list[str]:
+    return await _run(wrapper.get_media_files_names, params.pattern)
 
 
 async def handle_store_media_file(wrapper: AnkiWrapper, params: StoreMediaFileParams) -> None:
@@ -374,6 +413,7 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "syncMedia": (CredentialsParams, handle_sync_media),
     "deckNames": (EmptyParams, handle_deck_names),
     "deckNamesAndIds": (EmptyParams, handle_deck_names_and_ids),
+    "deckNameFromId": (DeckIdParams, handle_deck_name_from_id),
     "getDecks": (GetDecksParams, handle_get_decks),
     "createDeck": (CreateDeckParams, handle_create_deck),
     "changeDeck": (ChangeDeckParams, handle_change_deck),
@@ -385,6 +425,7 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "removeDeckConfigId": (RemoveDeckConfigIdParams, handle_remove_deck_config_id),
     "modelNames": (EmptyParams, handle_model_names),
     "modelNamesAndIds": (EmptyParams, handle_model_names_and_ids),
+    "modelNameFromId": (ModelIdParams, handle_model_name_from_id),
     "modelFieldNames": (ModelNameParams, handle_model_field_names),
     "modelFieldsOnTemplates": (ModelNameParams, handle_model_fields_on_templates),
     "createModel": (CreateModelParams, handle_create_model),
@@ -394,6 +435,7 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "updateModelStyling": (ModelStylingUpdateParams, handle_update_model_styling),
     "addNote": (AddNoteParams, handle_add_note),
     "addNotes": (AddNotesParams, handle_add_notes),
+    "canAddNote": (AddNoteParams, handle_can_add_note),
     "canAddNotes": (AddNotesParams, handle_can_add_notes),
     "canAddNotesWithErrorDetail": (AddNotesParams, handle_can_add_notes_with_error_detail),
     "updateNoteFields": (UpdateNoteFieldsParams, handle_update_note_fields),
@@ -404,11 +446,14 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "findNotes": (FindNotesParams, handle_find_notes),
     "notesInfo": (NotesIdsParams, handle_notes_info),
     "deleteNotes": (NotesIdsParams, handle_delete_notes),
+    "removeEmptyNotes": (EmptyParams, handle_remove_empty_notes),
     "findCards": (FindCardsParams, handle_find_cards),
     "cardsToNotes": (CardsIdsParams, handle_cards_to_notes),
     "cardsInfo": (CardsIdsParams, handle_cards_info),
+    "cardsModTime": (CardsIdsParams, handle_cards_mod_time),
     "suspend": (CardsIdsParams, handle_suspend),
     "unsuspend": (CardsIdsParams, handle_unsuspend),
+    "suspended": (SuspendedParams, handle_suspended),
     "areSuspended": (CardsIdsParams, handle_are_suspended),
     "areDue": (CardsIdsParams, handle_are_due),
     "getIntervals": (GetIntervalsParams, handle_get_intervals),
@@ -416,8 +461,10 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "forgetCards": (CardsIdsParams, handle_forget_cards),
     "relearnCards": (CardsIdsParams, handle_relearn_cards),
     "setEaseFactors": (SetEaseFactorsParams, handle_set_ease_factors),
+    "getEaseFactors": (CardsIdsParams, handle_get_ease_factors),
     "setSpecificValueOfCard": (SetSpecificValueOfCardParams, handle_set_specific_value_of_card),
     "getMediaDirPath": (EmptyParams, handle_get_media_dir_path),
+    "getMediaFilesNames": (GetMediaFilesNamesParams, handle_get_media_files_names),
     "storeMediaFile": (StoreMediaFileParams, handle_store_media_file),
     "retrieveMediaFile": (FilenameParams, handle_retrieve_media_file),
     "deleteMediaFile": (FilenameParams, handle_delete_media_file),

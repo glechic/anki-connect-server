@@ -102,6 +102,18 @@ class RemoveDeckConfigIdParams(_BaseParams):
     configId: int = 1
 
 
+class DeckIdParams(_BaseParams):
+    """For actions keyed on a single deck id."""
+
+    deckId: int
+
+
+class ModelIdParams(_BaseParams):
+    """For actions keyed on a single model id."""
+
+    modelId: int
+
+
 class ModelNameParams(_BaseParams):
     """Shared by actions that only need a modelName."""
 
@@ -182,6 +194,12 @@ class CardsIdsParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
 
 
+class SuspendedParams(_BaseParams):
+    """For the suspended action, keyed on a single card id."""
+
+    card: int
+
+
 class GetIntervalsParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
     complete: bool = False
@@ -210,6 +228,10 @@ class SetSpecificValueOfCardParams(_BaseParams):
     keys: list[str] = Field(default_factory=list)
     newValues: list[Any] = Field(default_factory=list)
     warning_check: bool = False
+
+
+class GetMediaFilesNamesParams(_BaseParams):
+    pattern: str = "*"
 
 
 class StoreMediaFileParams(_BaseParams):
