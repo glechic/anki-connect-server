@@ -29,6 +29,7 @@ from anki_connect_server.types import (
     GetDecksParams,
     GetIntervalsParams,
     GetMediaFilesNamesParams,
+    GetNoteTagsParams,
     ImportPackageParams,
     JsonObject,
     ModelIdParams,
@@ -38,6 +39,8 @@ from anki_connect_server.types import (
     MultiParams,
     NotesIdsParams,
     RemoveDeckConfigIdParams,
+    ReplaceTagsInAllNotesParams,
+    ReplaceTagsParams,
     SaveDeckConfigParams,
     SetDeckConfigIdParams,
     SetEaseFactorsParams,
@@ -46,6 +49,7 @@ from anki_connect_server.types import (
     SuspendedParams,
     UpdateNoteFieldsParams,
     UpdateNoteParams,
+    UpdateNoteTagsParams,
 )
 
 logger = logging.getLogger(__name__)
@@ -251,6 +255,30 @@ async def handle_get_tags(wrapper: AnkiWrapper, params: EmptyParams) -> list[str
     return await _run(wrapper.get_tags)
 
 
+async def handle_replace_tags(wrapper: AnkiWrapper, params: ReplaceTagsParams) -> None:
+    await _run(wrapper.replace_tags, params.notes, params.tag_to_replace, params.replace_with_tag)
+
+
+async def handle_replace_tags_in_all_notes(
+    wrapper: AnkiWrapper, params: ReplaceTagsInAllNotesParams
+) -> None:
+    await _run(wrapper.replace_tags_in_all_notes, params.tag_to_replace, params.replace_with_tag)
+
+
+async def handle_clear_unused_tags(wrapper: AnkiWrapper, params: EmptyParams) -> None:
+    _ = (wrapper, params)
+    await _run(wrapper.clear_unused_tags)
+
+
+async def handle_get_note_tags(wrapper: AnkiWrapper, params: GetNoteTagsParams) -> list[str]:
+    return await _run(wrapper.get_note_tags, params.note)
+
+
+async def handle_update_note_tags(wrapper: AnkiWrapper, params: UpdateNoteTagsParams) -> None:
+    tags_list = [params.tags] if isinstance(params.tags, str) else list(params.tags)
+    await _run(wrapper.update_note_tags, params.note, tags_list)
+
+
 async def handle_find_notes(wrapper: AnkiWrapper, params: FindNotesParams) -> list[int]:
     return await _run(wrapper.find_notes, params.query)
 
@@ -443,6 +471,11 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "addTags": (AddTagsParams, handle_add_tags),
     "removeTags": (AddTagsParams, handle_remove_tags),
     "getTags": (EmptyParams, handle_get_tags),
+    "replaceTags": (ReplaceTagsParams, handle_replace_tags),
+    "replaceTagsInAllNotes": (ReplaceTagsInAllNotesParams, handle_replace_tags_in_all_notes),
+    "clearUnusedTags": (EmptyParams, handle_clear_unused_tags),
+    "getNoteTags": (GetNoteTagsParams, handle_get_note_tags),
+    "updateNoteTags": (UpdateNoteTagsParams, handle_update_note_tags),
     "findNotes": (FindNotesParams, handle_find_notes),
     "notesInfo": (NotesIdsParams, handle_notes_info),
     "deleteNotes": (NotesIdsParams, handle_delete_notes),

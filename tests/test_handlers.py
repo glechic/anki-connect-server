@@ -22,6 +22,7 @@ from anki_connect_server.handlers import (
     handle_cards_mod_time,
     handle_cards_to_notes,
     handle_change_deck,
+    handle_clear_unused_tags,
     handle_create_deck,
     handle_deck_name_from_id,
     handle_deck_names,
@@ -36,6 +37,7 @@ from anki_connect_server.handlers import (
     handle_get_intervals,
     handle_get_media_dir_path,
     handle_get_media_files_names,
+    handle_get_note_tags,
     handle_model_field_names,
     handle_model_fields_on_templates,
     handle_model_name_from_id,
@@ -47,6 +49,8 @@ from anki_connect_server.handlers import (
     handle_relearn_cards,
     handle_remove_empty_notes,
     handle_remove_tags,
+    handle_replace_tags,
+    handle_replace_tags_in_all_notes,
     handle_retrieve_media_file,
     handle_set_ease_factors,
     handle_set_specific_value_of_card,
@@ -55,6 +59,7 @@ from anki_connect_server.handlers import (
     handle_sync_status,
     handle_unsuspend,
     handle_update_note_fields,
+    handle_update_note_tags,
     handle_version,
 )
 from anki_connect_server.types import (
@@ -75,16 +80,20 @@ from anki_connect_server.types import (
     FindNotesParams,
     GetIntervalsParams,
     GetMediaFilesNamesParams,
+    GetNoteTagsParams,
     ModelIdParams,
     ModelNameParams,
     MultiParams,
     NoteFieldUpdate,
     NoteInput,
     NotesIdsParams,
+    ReplaceTagsInAllNotesParams,
+    ReplaceTagsParams,
     SetEaseFactorsParams,
     SetSpecificValueOfCardParams,
     SuspendedParams,
     UpdateNoteFieldsParams,
+    UpdateNoteTagsParams,
 )
 
 
@@ -665,6 +674,128 @@ class TestNoteHandlers:
         await handle_add_tags(anki_wrapper, AddTagsParams(notes=note_ids, tags="batch"))
         for note_id in note_ids:
             assert anki_wrapper.col.get_note(note_id).tags == ["batch"]
+
+    @pytest.mark.asyncio
+    async def test_handle_replace_tags(self, anki_wrapper):
+        """replaceTags swaps the tag on the listed notes that have it."""
+        note_a = anki_wrapper.add_note(_note(front="ReplaceA"))
+        note_b = anki_wrapper.add_note(_note(front="ReplaceB"))
+        note_c = anki_wrapper.add_note(_note(front="ReplaceC"))
+        assert note_a is not None
+        assert note_b is not None
+        assert note_c is not None
+        anki_wrapper.add_tags([note_a, note_b], "old")
+        anki_wrapper.add_tags([note_c], "other")
+
+        result = await handle_replace_tags(
+            anki_wrapper,
+            ReplaceTagsParams(notes=[note_a, note_b], tag_to_replace="old", replace_with_tag="new"),
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_a) == ["new"]
+        assert anki_wrapper.get_note_tags(note_b) == ["new"]
+        assert anki_wrapper.get_note_tags(note_c) == ["other"]
+
+    @pytest.mark.asyncio
+    async def test_handle_replace_tags_skips_missing_notes(self, anki_wrapper):
+        """replaceTags silently skips missing note ids (upstream parity)."""
+        note_id = anki_wrapper.add_note(_note(front="ReplaceMissing"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "old")
+
+        result = await handle_replace_tags(
+            anki_wrapper,
+            ReplaceTagsParams(
+                notes=[999999999, note_id], tag_to_replace="old", replace_with_tag="new"
+            ),
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_id) == ["new"]
+
+    @pytest.mark.asyncio
+    async def test_handle_replace_tags_in_all_notes(self, anki_wrapper):
+        """replaceTagsInAllNotes swaps the tag across every note in the collection."""
+        note_a = anki_wrapper.add_note(_note(front="AllNotesA"))
+        note_b = anki_wrapper.add_note(_note(front="AllNotesB"))
+        assert note_a is not None
+        assert note_b is not None
+        anki_wrapper.add_tags([note_a], "alpha")
+        anki_wrapper.add_tags([note_b], "beta")
+
+        result = await handle_replace_tags_in_all_notes(
+            anki_wrapper,
+            ReplaceTagsInAllNotesParams(tag_to_replace="alpha", replace_with_tag="gamma"),
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_a) == ["gamma"]
+        assert anki_wrapper.get_note_tags(note_b) == ["beta"]
+
+    @pytest.mark.asyncio
+    async def test_handle_clear_unused_tags(self, anki_wrapper):
+        """clearUnusedTags removes tags no longer used by any note."""
+        note_id = anki_wrapper.add_note(_note(front="UnusedTagNote"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "single-use")
+        assert "single-use" in anki_wrapper.get_tags()
+
+        anki_wrapper.delete_notes([note_id])
+        # The tag lingers in the tags cache until unused tags are cleared.
+        assert "single-use" in anki_wrapper.get_tags()
+
+        result = await handle_clear_unused_tags(anki_wrapper, EmptyParams())
+
+        assert result is None
+        assert "single-use" not in anki_wrapper.get_tags()
+
+    @pytest.mark.asyncio
+    async def test_handle_get_note_tags(self, anki_wrapper):
+        """getNoteTags returns the note's tags."""
+        note_id = anki_wrapper.add_note(_note(front="TaggedNote"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "foo bar")
+
+        result = await handle_get_note_tags(anki_wrapper, GetNoteTagsParams(note=note_id))
+
+        assert sorted(result) == ["bar", "foo"]
+
+    @pytest.mark.asyncio
+    async def test_handle_get_note_tags_missing_note_raises(self, anki_wrapper):
+        """getNoteTags for a nonexistent note id raises a client-facing error."""
+        with pytest.raises(ValueError, match="Note was not found"):
+            await handle_get_note_tags(anki_wrapper, GetNoteTagsParams(note=999999999))
+
+    @pytest.mark.asyncio
+    async def test_handle_update_note_tags(self, anki_wrapper):
+        """updateNoteTags replaces all tags of a note (list or string form)."""
+        note_id = anki_wrapper.add_note(_note(front="UpdateTagsNote"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "a b")
+
+        result = await handle_update_note_tags(
+            anki_wrapper, UpdateNoteTagsParams(note=note_id, tags=["x", "y"])
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_id) == ["x", "y"]
+
+        # Upstream accepts a plain string as a single tag.
+        result = await handle_update_note_tags(
+            anki_wrapper, UpdateNoteTagsParams(note=note_id, tags="z")
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_id) == ["z"]
+
+    @pytest.mark.asyncio
+    async def test_handle_update_note_tags_missing_note_raises(self, anki_wrapper):
+        """updateNoteTags for a nonexistent note id raises a client-facing error."""
+        with pytest.raises(ValueError, match="not found"):
+            await handle_update_note_tags(
+                anki_wrapper, UpdateNoteTagsParams(note=999999999, tags=["x"])
+            )
 
 
 class TestCardHandlers:

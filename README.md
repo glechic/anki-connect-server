@@ -263,6 +263,11 @@ curl -X POST http://localhost:8765/api \
 - `addTags` - Add tags to notes
 - `removeTags` - Remove tags from notes
 - `getTags` - Get all tags
+- `replaceTags` - Replace a tag with another across the given notes
+- `replaceTagsInAllNotes` - Replace a tag with another across all notes
+- `clearUnusedTags` - Remove tags not used by any note
+- `getNoteTags` - Get a single note's tags
+- `updateNoteTags` - Replace all tags of a note (accepts a tag string or list)
 
 #### Cards
 - `findCards` - Search for cards

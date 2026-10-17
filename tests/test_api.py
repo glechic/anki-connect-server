@@ -400,6 +400,57 @@ async def test_add_and_remove_tags_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_replace_tags_action(app_with_wrapper):
+    """Test replaceTags action end-to-end."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    anki_wrapper.add_tags([note_id], "old")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "replaceTags",
+                "version": 6,
+                "params": {
+                    "notes": [note_id],
+                    "tag_to_replace": "old",
+                    "replace_with_tag": "fresh",
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": None, "error": None}
+
+        response = await client.post(
+            "/", json={"action": "getNoteTags", "version": 6, "params": {"note": note_id}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == ["fresh"]
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_note_tags_action(app_with_wrapper):
+    """Test getNoteTags action."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    anki_wrapper.add_tags([note_id], "tag-one tag-two")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "getNoteTags", "version": 6, "params": {"note": note_id}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": ["tag-one", "tag-two"], "error": None}
+
+
+@pytest.mark.asyncio
 async def test_get_media_dir_path_action(app_with_wrapper):
     """Test getMediaDirPath action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

@@ -785,6 +785,51 @@ class AnkiWrapper:
     def get_tags(self) -> list[str]:
         return list(self.col.tags.all())
 
+    def replace_tags(self, notes: list[int], tag_to_replace: str, replace_with_tag: str) -> None:
+        """Replace a tag on the given notes, skipping missing notes (upstream parity).
+
+        Only notes that currently have the tag are touched; a missing note id
+        in the list is silently skipped.
+        """
+        for nid in notes:
+            try:
+                note = self.col.get_note(NoteId(nid))
+            except NotFoundError:
+                continue
+            if note.has_tag(tag_to_replace):
+                note.remove_tag(tag_to_replace)
+                note.add_tag(replace_with_tag)
+                self.col.update_note(note)
+
+    def replace_tags_in_all_notes(self, tag_to_replace: str, replace_with_tag: str) -> None:
+        """Replace a tag across every note in the collection (upstream parity)."""
+        db = self.col.db
+        if db is None:
+            return
+        for nid in db.list("select id from notes"):
+            note = self.col.get_note(NoteId(int(nid)))
+            if note.has_tag(tag_to_replace):
+                note.remove_tag(tag_to_replace)
+                note.add_tag(replace_with_tag)
+                self.col.update_note(note)
+
+    def clear_unused_tags(self) -> None:
+        """Remove tags not used by any note (upstream parity).
+
+        Upstream calls tags.registerNotes(), which no longer exists in anki
+        26.8 (tags.register() is a deprecated no-op there), so use the modern
+        clear_unused_tags() instead.
+        """
+        self.col.tags.clear_unused_tags()
+
+    def get_note_tags(self, note_id: int) -> list[str]:
+        """Get a single note's tags, raising for a missing note (upstream parity)."""
+        try:
+            note = self.col.get_note(NoteId(note_id))
+        except NotFoundError as e:
+            raise ValueError(f"Note was not found: {note_id}") from e
+        return list(note.tags)
+
     def find_notes(self, query: str) -> list[int]:
         return [int(n) for n in self.col.find_notes(query)]
 

@@ -180,6 +180,31 @@ class AddTagsParams(_BaseParams):
     tags: str = ""
 
 
+class ReplaceTagsParams(_BaseParams):
+    # replaceTags uses the upstream AnkiConnect wire names (snake_case).
+    notes: list[int] = Field(default_factory=list)
+    tag_to_replace: str
+    replace_with_tag: str
+
+
+class ReplaceTagsInAllNotesParams(_BaseParams):
+    # replaceTagsInAllNotes uses the upstream AnkiConnect wire names (snake_case).
+    tag_to_replace: str
+    replace_with_tag: str
+
+
+class GetNoteTagsParams(_BaseParams):
+    """For getNoteTags, keyed on a single note id."""
+
+    note: int
+
+
+class UpdateNoteTagsParams(_BaseParams):
+    # updateNoteTags uses the upstream AnkiConnect wire names (snake_case).
+    note: int
+    tags: list[str] | str
+
+
 class FindNotesParams(_BaseParams):
     query: str
 
