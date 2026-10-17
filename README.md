@@ -287,6 +287,16 @@ curl -X POST http://localhost:8765/api \
 - `getEaseFactors` - Get card ease factors (10x the ease percentage)
 - `setSpecificValueOfCard` - Raw/dangerous: set arbitrary card fields directly (critical fields are refused unless `warning_check` is true)
 
+#### Stats
+- `cardReviews` - Get review log entries for a deck since a given review ID
+- `getReviewsOfCards` - Get full review history per card
+- `getLatestReviewID` - Get the newest review ID for a deck
+- `getNumCardsReviewedToday` - Count reviews made today
+- `getNumCardsReviewedByDay` - Count reviews grouped by day
+- `insertReviews` - Raw review-log insertion (developer utility, rows of 9 integers)
+- `getDeckStats` - Deck due counts by deck name (keys are deck IDs)
+- `getCollectionStatsHTML` - Full stats report as HTML
+
 #### Media
 - `getMediaDirPath` - Get media directory path
 - `getMediaFilesNames` - List media file names matching a glob pattern

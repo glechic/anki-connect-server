@@ -12,6 +12,7 @@ from anki_connect_server.types import (
     AddNotesParams,
     AddTagsParams,
     AnswerCardsParams,
+    CardReviewsParams,
     CardsIdsParams,
     ChangeDeckParams,
     CloneDeckConfigIdParams,
@@ -19,19 +20,24 @@ from anki_connect_server.types import (
     CreateModelParams,
     CredentialsParams,
     DeckIdParams,
+    DeckNameParams,
     DeleteDecksParams,
     EmptyParams,
     ExportPackageParams,
     FilenameParams,
     FindCardsParams,
     FindNotesParams,
+    GetCollectionStatsHTMLParams,
     GetDeckConfigParams,
     GetDecksParams,
+    GetDeckStatsParams,
     GetIntervalsParams,
     GetMediaFilesNamesParams,
     GetNoteTagsParams,
     ImportPackageParams,
+    InsertReviewsParams,
     JsonObject,
+    JsonValue,
     ModelIdParams,
     ModelNameParams,
     ModelStylingUpdateParams,
@@ -368,6 +374,48 @@ async def handle_set_specific_value_of_card(
     )
 
 
+async def handle_card_reviews(wrapper: AnkiWrapper, params: CardReviewsParams) -> list[JsonValue]:
+    return await _run(wrapper.card_reviews, params.deck, params.startID)
+
+
+async def handle_get_reviews_of_cards(
+    wrapper: AnkiWrapper, params: CardsIdsParams
+) -> dict[int, list[JsonObject]]:
+    return await _run(wrapper.get_reviews_of_cards, params.cards)
+
+
+async def handle_get_latest_review_id(wrapper: AnkiWrapper, params: DeckNameParams) -> int:
+    return await _run(wrapper.get_latest_review_id, params.deck)
+
+
+async def handle_get_num_cards_reviewed_today(wrapper: AnkiWrapper, params: EmptyParams) -> int:
+    _ = (wrapper, params)
+    return await _run(wrapper.get_num_cards_reviewed_today)
+
+
+async def handle_get_num_cards_reviewed_by_day(
+    wrapper: AnkiWrapper, params: EmptyParams
+) -> list[JsonValue]:
+    _ = (wrapper, params)
+    return await _run(wrapper.get_num_cards_reviewed_by_day)
+
+
+async def handle_insert_reviews(wrapper: AnkiWrapper, params: InsertReviewsParams) -> None:
+    await _run(wrapper.insert_reviews, params.reviews)
+
+
+async def handle_get_deck_stats(
+    wrapper: AnkiWrapper, params: GetDeckStatsParams
+) -> dict[int, JsonObject]:
+    return await _run(wrapper.get_deck_stats, params.decks)
+
+
+async def handle_get_collection_stats_html(
+    wrapper: AnkiWrapper, params: GetCollectionStatsHTMLParams
+) -> str:
+    return await _run(wrapper.get_collection_stats_html, params.wholeCollection)
+
+
 async def handle_get_media_dir_path(wrapper: AnkiWrapper, params: EmptyParams) -> str:
     _ = (wrapper, params)
     return await _run(wrapper.get_media_dir_path)
@@ -496,6 +544,14 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "setEaseFactors": (SetEaseFactorsParams, handle_set_ease_factors),
     "getEaseFactors": (CardsIdsParams, handle_get_ease_factors),
     "setSpecificValueOfCard": (SetSpecificValueOfCardParams, handle_set_specific_value_of_card),
+    "cardReviews": (CardReviewsParams, handle_card_reviews),
+    "getReviewsOfCards": (CardsIdsParams, handle_get_reviews_of_cards),
+    "getLatestReviewID": (DeckNameParams, handle_get_latest_review_id),
+    "getNumCardsReviewedToday": (EmptyParams, handle_get_num_cards_reviewed_today),
+    "getNumCardsReviewedByDay": (EmptyParams, handle_get_num_cards_reviewed_by_day),
+    "insertReviews": (InsertReviewsParams, handle_insert_reviews),
+    "getDeckStats": (GetDeckStatsParams, handle_get_deck_stats),
+    "getCollectionStatsHTML": (GetCollectionStatsHTMLParams, handle_get_collection_stats_html),
     "getMediaDirPath": (EmptyParams, handle_get_media_dir_path),
     "getMediaFilesNames": (GetMediaFilesNamesParams, handle_get_media_files_names),
     "storeMediaFile": (StoreMediaFileParams, handle_store_media_file),

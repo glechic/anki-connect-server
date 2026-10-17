@@ -18,6 +18,7 @@ from anki_connect_server.handlers import (
     handle_can_add_note,
     handle_can_add_notes,
     handle_can_add_notes_with_error_detail,
+    handle_card_reviews,
     handle_cards_info,
     handle_cards_mod_time,
     handle_cards_to_notes,
@@ -32,12 +33,19 @@ from anki_connect_server.handlers import (
     handle_find_cards,
     handle_find_notes,
     handle_forget_cards,
+    handle_get_collection_stats_html,
+    handle_get_deck_stats,
     handle_get_decks,
     handle_get_ease_factors,
     handle_get_intervals,
+    handle_get_latest_review_id,
     handle_get_media_dir_path,
     handle_get_media_files_names,
     handle_get_note_tags,
+    handle_get_num_cards_reviewed_by_day,
+    handle_get_num_cards_reviewed_today,
+    handle_get_reviews_of_cards,
+    handle_insert_reviews,
     handle_model_field_names,
     handle_model_fields_on_templates,
     handle_model_name_from_id,
@@ -68,19 +76,24 @@ from anki_connect_server.types import (
     AddTagsParams,
     AnswerCardsParams,
     CardAnswer,
+    CardReviewsParams,
     CardsIdsParams,
     ChangeDeckParams,
     CreateDeckParams,
     CredentialsParams,
     DeckIdParams,
+    DeckNameParams,
     DeleteDecksParams,
     EmptyParams,
     FilenameParams,
     FindCardsParams,
     FindNotesParams,
+    GetCollectionStatsHTMLParams,
+    GetDeckStatsParams,
     GetIntervalsParams,
     GetMediaFilesNamesParams,
     GetNoteTagsParams,
+    InsertReviewsParams,
     ModelIdParams,
     ModelNameParams,
     MultiParams,
@@ -1153,6 +1166,186 @@ class TestCardHandlers:
         assert result == [True]
         card = anki_wrapper.col.get_card(CardId(card_ids[0]))
         assert card.ivl == 100
+
+
+class TestStatsHandlers:
+    """Test stats/revlog handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handle_card_reviews(self, anki_wrapper):
+        """cardReviews returns rows of 9 elements since the start id."""
+        anki_wrapper.add_note(_note(front="CardReviews"))
+        card_ids = anki_wrapper.find_cards("CardReviews")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_card_reviews(
+            anki_wrapper, CardReviewsParams(deck="Default", startID=0)
+        )
+
+        assert len(result) >= 1
+        row = result[0]
+        assert isinstance(row, list)
+        assert len(row) == 9
+        assert isinstance(row[0], int)  # id
+        assert isinstance(row[1], int)  # cid
+        assert row[1] == card_ids[0]
+
+        # A startID larger than any review id filters everything out.
+        late = await handle_card_reviews(
+            anki_wrapper, CardReviewsParams(deck="Default", startID=99999999999999)
+        )
+        assert late == []
+
+    @pytest.mark.asyncio
+    async def test_handle_get_reviews_of_cards(self, anki_wrapper):
+        """getReviewsOfCards returns per-card review dicts without cid."""
+        anki_wrapper.add_note(_note(front="ReviewsOfCards"))
+        card_ids = anki_wrapper.find_cards("ReviewsOfCards")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_reviews_of_cards(anki_wrapper, CardsIdsParams(cards=card_ids))
+
+        assert card_ids[0] in result
+        reviews = result[card_ids[0]]
+        assert len(reviews) >= 1
+        assert set(reviews[0]) == {
+            "id",
+            "usn",
+            "ease",
+            "ivl",
+            "lastIvl",
+            "factor",
+            "time",
+            "type",
+        }
+
+        # A card id with no reviews maps to an empty list.
+        missing = await handle_get_reviews_of_cards(anki_wrapper, CardsIdsParams(cards=[999999999]))
+        assert missing == {999999999: []}
+
+    @pytest.mark.asyncio
+    async def test_handle_get_latest_review_id(self, anki_wrapper):
+        """getLatestReviewID is 0 without reviews and the max revlog id after."""
+        anki_wrapper.create_deck("NoReviewsYet")
+        empty = await handle_get_latest_review_id(anki_wrapper, DeckNameParams(deck="NoReviewsYet"))
+        assert empty == 0
+
+        anki_wrapper.add_note(_note(front="LatestReview"))
+        card_ids = anki_wrapper.find_cards("LatestReview")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_latest_review_id(anki_wrapper, DeckNameParams(deck="Default"))
+
+        max_id = anki_wrapper.col.db.scalar("select max(id) from revlog")
+        assert result == max_id
+        assert result > 0
+
+    @pytest.mark.asyncio
+    async def test_handle_get_num_cards_reviewed_today(self, anki_wrapper):
+        """getNumCardsReviewedToday counts reviews made since the day start."""
+        anki_wrapper.add_note(_note(front="ReviewedToday"))
+        card_ids = anki_wrapper.find_cards("ReviewedToday")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_num_cards_reviewed_today(anki_wrapper, EmptyParams())
+
+        assert result >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_num_cards_reviewed_by_day(self, anki_wrapper):
+        """getNumCardsReviewedByDay returns [day, count] rows."""
+        anki_wrapper.add_note(_note(front="ReviewedByDay"))
+        card_ids = anki_wrapper.find_cards("ReviewedByDay")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_num_cards_reviewed_by_day(anki_wrapper, EmptyParams())
+
+        assert len(result) >= 1
+        row = result[0]
+        assert isinstance(row, list)
+        assert len(row) == 2
+        day, count = row
+        assert isinstance(day, str)
+        assert isinstance(count, int)
+        assert count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_insert_reviews(self, anki_wrapper):
+        """insertReviews inserts raw 9-element rows bound as parameters."""
+        anki_wrapper.add_note(_note(front="InsertReviews"))
+        card_ids = anki_wrapper.find_cards("InsertReviews")
+        cid = card_ids[0]
+
+        await handle_insert_reviews(
+            anki_wrapper,
+            InsertReviewsParams(reviews=[[1234567890123, cid, 0, 3, 0, 0, 2500, 1000, 3]]),
+        )
+
+        reviews = await handle_get_reviews_of_cards(anki_wrapper, CardsIdsParams(cards=[cid]))
+        assert any(review["id"] == 1234567890123 for review in reviews[cid])
+
+        # A malformed row (8 elements) is rejected with a clean error.
+        with pytest.raises(ValueError, match="9 elements"):
+            await handle_insert_reviews(
+                anki_wrapper, InsertReviewsParams(reviews=[[1, 2, 3, 4, 5, 6, 7, 8]])
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_get_deck_stats(self, anki_wrapper):
+        """getDeckStats returns due counts keyed by deck id."""
+        anki_wrapper.add_note(_note(front="DeckStats"))
+        default_id = anki_wrapper.deck_names_and_ids()["Default"]
+
+        result = await handle_get_deck_stats(anki_wrapper, GetDeckStatsParams(decks=["Default"]))
+
+        assert default_id in result
+        entry = result[default_id]
+        assert set(entry) == {
+            "deck_id",
+            "name",
+            "new_count",
+            "learn_count",
+            "review_count",
+            "total_in_deck",
+        }
+        new_count = entry["new_count"]
+        assert isinstance(new_count, int)
+        assert new_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_deck_stats_flattens_children(self, anki_wrapper):
+        """getDeckStats aggregates child decks into the parent entry.
+
+        The flattened due tree makes the requested "Parent" node findable and
+        its due counts include cards sitting in "Parent::Child", which is not
+        returned as a separate response key. (total_in_deck counts cards
+        directly in the deck only -- the child's card shows up in the
+        parent's due counts instead.)
+        """
+        anki_wrapper.create_deck("Parent")
+        child_id = anki_wrapper.create_deck("Parent::Child")
+        parent_id = anki_wrapper.deck_names_and_ids()["Parent"]
+        anki_wrapper.add_note(_note(deck="Parent::Child", front="ChildNote"))
+
+        result = await handle_get_deck_stats(anki_wrapper, GetDeckStatsParams(decks=["Parent"]))
+
+        assert set(result) == {parent_id}
+        assert child_id not in result
+        parent_entry = result[parent_id]
+        new_count = parent_entry["new_count"]
+        assert isinstance(new_count, int)
+        assert new_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_collection_stats_html(self, anki_wrapper):
+        """getCollectionStatsHTML returns the wrapped HTML report."""
+        result = await handle_get_collection_stats_html(
+            anki_wrapper, GetCollectionStatsHTMLParams()
+        )
+
+        assert isinstance(result, str)
+        assert result
+        assert result.startswith("<center")
 
 
 class TestMediaHandlers:

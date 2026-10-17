@@ -355,6 +355,44 @@ async def test_set_ease_factors_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_get_deck_stats_action(app_with_wrapper):
+    """Test getDeckStats action."""
+    anki_wrapper = app_with_wrapper
+    anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "getDeckStats", "version": 6, "params": {"decks": ["Default"]}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["error"] is None
+        result = data["result"]
+        assert isinstance(result, dict)
+        assert len(result) == 1
+        entry = next(iter(result.values()))
+        assert "new_count" in entry
+
+
+@pytest.mark.asyncio
+async def test_get_num_cards_reviewed_today_action(app_with_wrapper):
+    """Test getNumCardsReviewedToday action."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/", json={"action": "getNumCardsReviewedToday", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] >= 1
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
 async def test_get_tags_action(app_with_wrapper):
     """Test getTags action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

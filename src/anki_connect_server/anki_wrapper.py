@@ -18,7 +18,7 @@ from typing import Any, cast
 from anki.collection import Collection, StripHtmlMode
 from anki.cards import CardId
 from anki.consts import CARD_TYPE_RELEARNING, QUEUE_TYPE_LRN
-from anki.decks import DeckConfigDict, DeckConfigId, DeckId
+from anki.decks import DeckConfigDict, DeckConfigId, DeckId, DeckTreeNode
 from anki.errors import NotFoundError
 from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
 from anki.notes import Note, NoteId
@@ -34,7 +34,7 @@ from anki_connect_server.sync import (
     SyncError,
     SyncResult,
 )
-from anki_connect_server.types import JsonObject
+from anki_connect_server.types import JsonObject, JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -1158,6 +1158,149 @@ class AnkiWrapper:
         except Exception as e:
             return [[False, str(e)]]
         return [True]
+
+    def card_reviews(self, deck: str, start_id: int) -> list[JsonValue]:
+        """Get review-log rows for a deck since a given review id (upstream parity).
+
+        Rows are returned as plain arrays in the revlog column order.
+        """
+        db = self.col.db
+        if db is None:
+            return []
+        return cast(
+            "list[JsonValue]",
+            db.all(
+                "select id, cid, usn, ease, ivl, lastIvl, factor, time, type from revlog"
+                " where id > ? and cid in (select id from cards where did = ?)",
+                start_id,
+                self.col.decks.id(deck),
+            ),
+        )
+
+    def get_reviews_of_cards(self, cards: list[int]) -> dict[int, list[JsonObject]]:
+        """Get the full review history per card, keyed by card id (upstream parity).
+
+        The row dicts do not include cid; cards with no reviews map to [].
+        """
+        columns = ("id", "usn", "ease", "ivl", "lastIvl", "factor", "time", "type")
+        db = self.col.db
+        if db is None:
+            return {card: [] for card in cards}
+        result: dict[int, list[JsonObject]] = {}
+        for card in cards:
+            rows = db.all(
+                "select id, usn, ease, ivl, lastIvl, factor, time, type from revlog where cid = ?",
+                card,
+            )
+            result[card] = [cast(JsonObject, dict(zip(columns, row, strict=False))) for row in rows]
+        return result
+
+    def get_latest_review_id(self, deck: str) -> int:
+        """Get the newest revlog id for a deck, or 0 when it has no reviews."""
+        db = self.col.db
+        if db is None:
+            return 0
+        return int(
+            db.scalar(
+                "select max(id) from revlog where cid in (select id from cards where did = ?)",
+                self.col.decks.id(deck),
+            )
+            or 0
+        )
+
+    def get_num_cards_reviewed_today(self) -> int:
+        """Count reviews made since the start of the current review day (upstream parity)."""
+        db = self.col.db
+        if db is None:
+            return 0
+        return int(
+            db.scalar(
+                "select count() from revlog where id > ?",
+                (self.col.sched.day_cutoff - 86400) * 1000,
+            )
+            or 0
+        )
+
+    def get_num_cards_reviewed_by_day(self) -> list[JsonValue]:
+        """Count reviews grouped by day, newest day first (upstream parity).
+
+        Rows are [day, count] arrays; the day boundary is offset by the hour
+        of the scheduler day cutoff, mirroring upstream.
+        """
+        db = self.col.db
+        if db is None:
+            return []
+        hour_offset = int(time.strftime("%H", time.localtime(self.col.sched.day_cutoff))) * 3600
+        return cast(
+            "list[JsonValue]",
+            db.all(
+                'select date(id/1000 - ?, "unixepoch", "localtime") as day, count()'
+                " from revlog group by day order by day desc",
+                hour_offset,
+            ),
+        )
+
+    def insert_reviews(self, reviews: list[list[int]]) -> None:
+        """Insert raw revlog rows (developer utility, upstream parity).
+
+        Unlike upstream, values are bound as SQL parameters instead of being
+        interpolated into the statement; every row must have exactly 9
+        elements or the whole insert is refused with a clean error.
+        """
+        if not reviews:
+            return
+        for row in reviews:
+            if len(row) != 9:
+                raise ValueError(f"each review row must have 9 elements, got {len(row)}")
+        db = self.col.db
+        if db is None:
+            return
+        for row in reviews:
+            db.execute(
+                "insert into revlog(id, cid, usn, ease, ivl, lastIvl, factor, time, type)"
+                " values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                *row,
+            )
+
+    def _collect_deck_tree_children(self, parent_node: DeckTreeNode) -> dict[int, DeckTreeNode]:
+        """Flatten a due tree into a deck_id -> node dict including all descendants."""
+        all_nodes = {parent_node.deck_id: parent_node}
+        for child in parent_node.children:
+            all_nodes.update(self._collect_deck_tree_children(child))
+        return all_nodes
+
+    def get_deck_stats(self, decks: list[str]) -> dict[int, JsonObject]:
+        """Get deck due counts keyed by deck id (upstream parity).
+
+        Missing decks are created (mirroring upstream's decks.id() call), and
+        a parent's entry aggregates all descendant decks via the flattened
+        due tree. The wire keys are snake_case, matching upstream
+        deckStatsToJson.
+        """
+        deck_ids = {self.col.decks.id(name) for name in decks}
+        result: dict[int, JsonObject] = {}
+        for deck_id, node in self._collect_deck_tree_children(
+            self.col.sched.deck_due_tree()
+        ).items():
+            if deck_id in deck_ids:
+                result[deck_id] = cast(
+                    JsonObject,
+                    {
+                        "deck_id": node.deck_id,
+                        "name": node.name,
+                        "new_count": node.new_count,
+                        "learn_count": node.learn_count,
+                        "review_count": node.review_count,
+                        "total_in_deck": node.total_in_deck,
+                    },
+                )
+        return result
+
+    def get_collection_stats_html(self, whole_collection: bool = True) -> str:
+        """Get the full stats report as HTML (upstream parity)."""
+        stats = self.col.stats()
+        stats.wholeCollection = whole_collection
+        return stats.report()
 
     def get_media_dir_path(self) -> str:
         return self.col.media.dir()

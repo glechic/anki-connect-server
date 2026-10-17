@@ -255,6 +255,33 @@ class SetSpecificValueOfCardParams(_BaseParams):
     warning_check: bool = False
 
 
+class CardReviewsParams(_BaseParams):
+    """For cardReviews, keyed on a deck name and a starting review id."""
+
+    deck: str
+    startID: int
+
+
+class DeckNameParams(_BaseParams):
+    """For actions keyed on a single deck name (getLatestReviewID)."""
+
+    deck: str = ""
+
+
+class InsertReviewsParams(_BaseParams):
+    """For insertReviews: raw revlog rows of 9 integers each."""
+
+    reviews: list[list[int]] = Field(default_factory=list)
+
+
+class GetDeckStatsParams(_BaseParams):
+    decks: list[str] = Field(default_factory=list)
+
+
+class GetCollectionStatsHTMLParams(_BaseParams):
+    wholeCollection: bool = True
+
+
 class GetMediaFilesNamesParams(_BaseParams):
     pattern: str = "*"
 

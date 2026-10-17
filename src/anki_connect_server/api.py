@@ -70,9 +70,13 @@ async def health() -> dict[str, str]:
 
 
 # No response_model: legacy (version ≤4) requests return the bare result,
-# which does not fit the v6 envelope shape.
-@app.post("/")
-@app.post("/api")
+# which does not fit the v6 envelope shape. Passing response_model=None
+# explicitly is required: FastAPI would otherwise infer a response model
+# from the JsonValue return annotation and reject JSON-legal payloads such
+# as getDeckStats' int-keyed dict (JSON stringifies such keys, but pydantic
+# requires str keys).
+@app.post("/", response_model=None)
+@app.post("/api", response_model=None)
 async def handle_request(req: AnkiConnectRequest, request: Request) -> JsonValue:
     wrapper = get_request_wrapper(request)
     try:
