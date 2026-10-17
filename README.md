@@ -269,6 +269,11 @@ curl -X POST http://localhost:8765/api \
 - `areSuspended` - Check if cards are suspended
 - `areDue` - Check if cards are due
 - `getIntervals` - Get card intervals
+- `answerCards` - Answer cards with a given ease (1=Again, 2=Hard, 3=Good, 4=Easy); returns a per-card success list
+- `forgetCards` - Reset cards back to new, clearing all scheduling state
+- `relearnCards` - Move cards into the relearning queue
+- `setEaseFactors` - Set card ease factors (10x the ease percentage, e.g. 3100 = 310%)
+- `setSpecificValueOfCard` - Raw/dangerous: set arbitrary card fields directly (critical fields are refused unless `warning_check` is true)
 
 #### Media
 - `getMediaDirPath` - Get media directory path

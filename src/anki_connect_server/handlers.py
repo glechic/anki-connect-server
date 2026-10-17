@@ -11,6 +11,7 @@ from anki_connect_server.types import (
     AddNoteParams,
     AddNotesParams,
     AddTagsParams,
+    AnswerCardsParams,
     CardsIdsParams,
     ChangeDeckParams,
     CloneDeckConfigIdParams,
@@ -36,6 +37,8 @@ from anki_connect_server.types import (
     RemoveDeckConfigIdParams,
     SaveDeckConfigParams,
     SetDeckConfigIdParams,
+    SetEaseFactorsParams,
+    SetSpecificValueOfCardParams,
     StoreMediaFileParams,
     UpdateNoteFieldsParams,
     UpdateNoteParams,
@@ -276,6 +279,34 @@ async def handle_get_intervals(wrapper: AnkiWrapper, params: GetIntervalsParams)
     return await _run(wrapper.get_intervals, params.cards, params.complete)
 
 
+async def handle_answer_cards(wrapper: AnkiWrapper, params: AnswerCardsParams) -> list[bool]:
+    return await _run(wrapper.answer_cards, [answer.model_dump() for answer in params.answers])
+
+
+async def handle_forget_cards(wrapper: AnkiWrapper, params: CardsIdsParams) -> None:
+    await _run(wrapper.forget_cards, params.cards)
+
+
+async def handle_relearn_cards(wrapper: AnkiWrapper, params: CardsIdsParams) -> None:
+    await _run(wrapper.relearn_cards, params.cards)
+
+
+async def handle_set_ease_factors(wrapper: AnkiWrapper, params: SetEaseFactorsParams) -> list[bool]:
+    return await _run(wrapper.set_ease_factors, params.cards, params.easeFactors)
+
+
+async def handle_set_specific_value_of_card(
+    wrapper: AnkiWrapper, params: SetSpecificValueOfCardParams
+) -> Any:
+    return await _run(
+        wrapper.set_specific_value_of_card,
+        params.card,
+        params.keys,
+        params.newValues,
+        params.warning_check,
+    )
+
+
 async def handle_get_media_dir_path(wrapper: AnkiWrapper, params: EmptyParams) -> str:
     _ = (wrapper, params)
     return await _run(wrapper.get_media_dir_path)
@@ -381,6 +412,11 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "areSuspended": (CardsIdsParams, handle_are_suspended),
     "areDue": (CardsIdsParams, handle_are_due),
     "getIntervals": (GetIntervalsParams, handle_get_intervals),
+    "answerCards": (AnswerCardsParams, handle_answer_cards),
+    "forgetCards": (CardsIdsParams, handle_forget_cards),
+    "relearnCards": (CardsIdsParams, handle_relearn_cards),
+    "setEaseFactors": (SetEaseFactorsParams, handle_set_ease_factors),
+    "setSpecificValueOfCard": (SetSpecificValueOfCardParams, handle_set_specific_value_of_card),
     "getMediaDirPath": (EmptyParams, handle_get_media_dir_path),
     "storeMediaFile": (StoreMediaFileParams, handle_store_media_file),
     "retrieveMediaFile": (FilenameParams, handle_retrieve_media_file),

@@ -12,6 +12,7 @@ from anki_connect_server.handlers import (
     handle_add_note,
     handle_add_notes,
     handle_add_tags,
+    handle_answer_cards,
     handle_are_due,
     handle_are_suspended,
     handle_can_add_notes,
@@ -26,6 +27,7 @@ from anki_connect_server.handlers import (
     handle_delete_notes,
     handle_find_cards,
     handle_find_notes,
+    handle_forget_cards,
     handle_get_decks,
     handle_get_intervals,
     handle_get_media_dir_path,
@@ -36,8 +38,11 @@ from anki_connect_server.handlers import (
     handle_model_styling,
     handle_multi,
     handle_notes_info,
+    handle_relearn_cards,
     handle_remove_tags,
     handle_retrieve_media_file,
+    handle_set_ease_factors,
+    handle_set_specific_value_of_card,
     handle_suspend,
     handle_sync_status,
     handle_unsuspend,
@@ -48,6 +53,8 @@ from anki_connect_server.types import (
     AddNoteParams,
     AddNotesParams,
     AddTagsParams,
+    AnswerCardsParams,
+    CardAnswer,
     CardsIdsParams,
     ChangeDeckParams,
     CreateDeckParams,
@@ -63,6 +70,8 @@ from anki_connect_server.types import (
     NoteFieldUpdate,
     NoteInput,
     NotesIdsParams,
+    SetEaseFactorsParams,
+    SetSpecificValueOfCardParams,
     UpdateNoteFieldsParams,
 )
 
@@ -735,6 +744,160 @@ class TestCardHandlers:
         # interval, which for a learning card is a small number (often 0
         # or 1). Assert it's present and an int -- the regression check
         # is that the field exists and is sourced from the revlog.
+
+    @pytest.mark.asyncio
+    async def test_handle_answer_cards(self, anki_wrapper):
+        """answerCards answers the card, writes a revlog row, and leaves new state."""
+        note_id = anki_wrapper.add_note(_note(front="AnswerMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_answer_cards(
+            anki_wrapper,
+            AnswerCardsParams(answers=[CardAnswer(cardId=card_ids[0], ease=3)]),
+        )
+        assert result == [True]
+        revlog_rows = anki_wrapper.col.db.all("select id from revlog where cid = ?", card_ids[0])
+        assert len(revlog_rows) == 1
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.queue != 0
+        assert card.type != 0
+
+    @pytest.mark.asyncio
+    async def test_handle_answer_cards_missing_card(self, anki_wrapper):
+        """answerCards reports False for a nonexistent card id."""
+        result = await handle_answer_cards(
+            anki_wrapper, AnswerCardsParams(answers=[CardAnswer(cardId=999999999, ease=3)])
+        )
+        assert result == [False]
+
+    @pytest.mark.asyncio
+    async def test_handle_answer_cards_empty_list(self, anki_wrapper):
+        """answerCards with no answers is a no-op returning an empty list."""
+        result = await handle_answer_cards(anki_wrapper, AnswerCardsParams(answers=[]))
+        assert result == []
+
+    def test_answer_cards_invalid_ease_rejected(self):
+        """Ease values outside 1-4 fail validation before anything is applied."""
+        with pytest.raises(ValidationError):
+            AnswerCardsParams.model_validate({"answers": [{"cardId": 1, "ease": 5}]})
+
+    @pytest.mark.asyncio
+    async def test_handle_forget_cards(self, anki_wrapper):
+        """forgetCards hard-resets a scheduled card back to new."""
+        note_id = anki_wrapper.add_note(_note(front="ForgetMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        # Move the card out of the new state by answering it.
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type != 0 or card.queue != 0
+        result = await handle_forget_cards(anki_wrapper, CardsIdsParams(cards=card_ids))
+        assert result is None
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type == 0
+        assert card.queue == 0
+        assert card.ivl == 0
+        assert card.factor == 0
+
+    @pytest.mark.asyncio
+    async def test_handle_relearn_cards(self, anki_wrapper):
+        """relearnCards moves a review card into the relearning state."""
+        note_id = anki_wrapper.add_note(_note(front="RelearnMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        # Graduate the card to the review state first (Easy skips learning steps).
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 4}]) == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type == 2  # review
+        result = await handle_relearn_cards(anki_wrapper, CardsIdsParams(cards=card_ids))
+        assert result is None
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type == 3  # CARD_TYPE_RELEARNING
+        assert card.queue == 1  # learning queue
+
+    @pytest.mark.asyncio
+    async def test_handle_set_ease_factors(self, anki_wrapper):
+        """setEaseFactors sets the factor (10x the ease percentage)."""
+        note_id = anki_wrapper.add_note(_note(front="EaseMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_ease_factors(
+            anki_wrapper, SetEaseFactorsParams(cards=card_ids, easeFactors=[3100])
+        )
+        assert result == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.factor == 3100
+
+    @pytest.mark.asyncio
+    async def test_handle_set_ease_factors_missing_card(self, anki_wrapper):
+        """setEaseFactors reports False for a nonexistent card id."""
+        result = await handle_set_ease_factors(
+            anki_wrapper, SetEaseFactorsParams(cards=[999999999], easeFactors=[2500])
+        )
+        assert result == [False]
+
+    @pytest.mark.asyncio
+    async def test_handle_set_ease_factors_length_mismatch(self, anki_wrapper):
+        """Mismatched cards/easeFactors lengths raise a client-facing error."""
+        with pytest.raises(ValueError, match="same length"):
+            await handle_set_ease_factors(
+                anki_wrapper, SetEaseFactorsParams(cards=[1, 2], easeFactors=[2500])
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card(self, anki_wrapper):
+        """setSpecificValueOfCard applies allowed keys like 'due'."""
+        note_id = anki_wrapper.add_note(_note(front="SpecificValue"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["due"], newValues=[42]),
+        )
+        assert result == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.due == 42
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_missing_card(self, anki_wrapper):
+        """A nonexistent card id yields upstream's nested failure shape."""
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=999999999, keys=["due"], newValues=[5]),
+        )
+        # Upstream returns [[False, error]] -- one outer element holding a
+        # two-element [False, message] list.
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], list)
+        assert len(result[0]) == 2
+        assert result[0][0] is False
+        assert isinstance(result[0][1], str)
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_blocked_key(self, anki_wrapper):
+        """Blocked keys are refused when warning_check is False."""
+        note_id = anki_wrapper.add_note(_note(front="BlockedKey"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["ivl"], newValues=[100]),
+        )
+        assert result is False
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.ivl == 0  # nothing was applied
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_blocked_key_with_warning_check(
+        self, anki_wrapper
+    ):
+        """warning_check=True overrides the blocked-key refusal."""
+        note_id = anki_wrapper.add_note(_note(front="BlockedKeyAllowed"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(
+                card=card_ids[0], keys=["ivl"], newValues=[100], warning_check=True
+            ),
+        )
+        assert result == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.ivl == 100
 
 
 class TestMediaHandlers:

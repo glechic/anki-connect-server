@@ -15,7 +15,9 @@ from typing import Any, cast
 
 from anki.collection import Collection, StripHtmlMode
 from anki.cards import CardId
+from anki.consts import CARD_TYPE_RELEARNING, QUEUE_TYPE_LRN
 from anki.decks import DeckConfigDict, DeckConfigId, DeckId
+from anki.errors import NotFoundError
 from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
 from anki.notes import Note, NoteId
 from anki.sync_pb2 import MediaSyncStatusResponse, SyncCollectionResponse
@@ -919,6 +921,117 @@ class AnkiWrapper:
             return 0
         previous = entries[-2]
         return int(previous.interval)
+
+    def answer_cards(self, answers: list[JsonObject]) -> list[bool]:
+        """Answer cards with the given ease (1=Again, 2=Hard, 3=Good, 4=Easy).
+
+        Mirrors upstream AnkiConnect: returns one success flag per entry; a
+        missing card id yields False. start_timer() must run before
+        answerCard or anki 26.8 crashes in time_taken() because
+        timer_started is None.
+        """
+        result: list[bool] = []
+        for answer in answers:
+            card_id = int(cast(int, answer["cardId"]))
+            ease = int(cast(int, answer["ease"]))
+            try:
+                card = self.col.get_card(CardId(card_id))
+            except NotFoundError:
+                result.append(False)
+                continue
+            card.start_timer()
+            self.col.sched.answerCard(card, ease)  # type: ignore[arg-type]
+            result.append(True)
+        return result
+
+    def forget_cards(self, cards: list[int]) -> None:
+        """Hard-reset cards back to new, clearing all scheduling state.
+
+        Mirrors upstream AnkiConnect's raw SQL; missing ids are a no-op.
+        """
+        db = self.col.db
+        if db is None:
+            return
+        placeholders = ",".join("?" for _ in cards)
+        db.execute(
+            # S608 is a false positive: only '?' placeholders are interpolated,
+            # the card ids themselves are bound as parameters.
+            "update cards set type=0, queue=0, left=0, ivl=0, due=0, odue=0, factor=0"  # noqa: S608
+            f" where id in ({placeholders})",
+            *cards,
+        )
+
+    def relearn_cards(self, cards: list[int]) -> None:
+        """Move cards into the relearning state (learning queue).
+
+        Mirrors upstream AnkiConnect's raw SQL; missing ids are a no-op.
+        """
+        db = self.col.db
+        if db is None:
+            return
+        placeholders = ",".join("?" for _ in cards)
+        db.execute(
+            # S608 is a false positive: only '?' placeholders are interpolated,
+            # the card ids themselves are bound as parameters.
+            f"update cards set type={CARD_TYPE_RELEARNING}, queue={QUEUE_TYPE_LRN}"  # noqa: S608
+            f" where id in ({placeholders})",
+            *cards,
+        )
+
+    def set_ease_factors(self, cards: list[int], ease_factors: list[int]) -> list[bool]:
+        """Set card ease factors (10x the ease percentage, e.g. 3100 = 310%)."""
+        if len(cards) != len(ease_factors):
+            raise ValueError("cards and easeFactors must be the same length")
+        result: list[bool] = []
+        for i, card_id in enumerate(cards):
+            try:
+                card = self.col.get_card(CardId(card_id))
+            except NotFoundError:
+                result.append(False)
+                continue
+            card.factor = int(ease_factors[i])
+            card.flush()
+            result.append(True)
+        return result
+
+    def set_specific_value_of_card(
+        self, card: int, keys: list[str], new_values: list[Any], warning_check: bool = False
+    ) -> Any:
+        """Set arbitrary card fields directly (raw/dangerous action).
+
+        Mirrors upstream AnkiConnect: critical scheduling fields are refused
+        unless warning_check is True; mismatched lengths return False; the
+        update returns [True] on success and [[False, error]] on failure
+        (nested -- mirroring upstream).
+        """
+        blocked_keys = (
+            "did",
+            "id",
+            "ivl",
+            "lapses",
+            "left",
+            "mod",
+            "nid",
+            "odid",
+            "odue",
+            "ord",
+            "queue",
+            "reps",
+            "type",
+            "usn",
+        )
+        if any(key in blocked_keys for key in keys) and not warning_check:
+            return False
+        if len(new_values) != len(keys):
+            return False
+        try:
+            anki_card = self.col.get_card(CardId(card))
+            for i, key in enumerate(keys):
+                setattr(anki_card, key, new_values[i])
+            anki_card.flush()
+        except Exception as e:
+            return [[False, str(e)]]
+        return [True]
 
     def get_media_dir_path(self) -> str:
         return self.col.media.dir()

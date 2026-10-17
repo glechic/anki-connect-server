@@ -257,6 +257,63 @@ async def test_unsuspend_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_answer_cards_action(app_with_wrapper):
+    """Test answerCards action over HTTP."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "answerCards",
+                "version": 6,
+                "params": {"answers": [{"cardId": card_ids[0], "ease": 3}]},
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": [True], "error": None}
+
+        response = await client.post(
+            "/",
+            json={
+                "action": "answerCards",
+                "version": 6,
+                "params": {"answers": [{"cardId": 999999999, "ease": 3}]},
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["result"] == [False]
+
+
+@pytest.mark.asyncio
+async def test_set_ease_factors_action(app_with_wrapper):
+    """Test setEaseFactors action over HTTP."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "setEaseFactors",
+                "version": 6,
+                "params": {"cards": card_ids, "easeFactors": [3000]},
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == [True]
+        assert data["error"] is None
+        assert anki_wrapper.cards_info(card_ids)[0]["ease"] == 3000
+
+
+@pytest.mark.asyncio
 async def test_get_tags_action(app_with_wrapper):
     """Test getTags action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
