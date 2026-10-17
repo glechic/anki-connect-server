@@ -12,6 +12,7 @@ from anki_connect_server.types import (
     AddNotesParams,
     AddTagsParams,
     AnswerCardsParams,
+    ApiReflectParams,
     CardReviewsParams,
     CardsIdsParams,
     ChangeDeckParams,
@@ -121,6 +122,33 @@ async def handle_sync_status(wrapper: AnkiWrapper, params: CredentialsParams) ->
 
 async def handle_sync_media(wrapper: AnkiWrapper, params: CredentialsParams) -> MediaSyncResult:
     return await _run(wrapper.sync_media_only, params.username, params.password, params.endpoint)
+
+
+async def handle_api_reflect(wrapper: AnkiWrapper, params: ApiReflectParams) -> JsonObject:
+    """Introspect the registered actions (upstream parity).
+
+    Only the "actions" scope is supported. Upstream silently skips non-string
+    entries in actions; pydantic's list[str] rejects them with a validation
+    error instead, which is consistent with this server's extra="forbid"
+    philosophy.
+    """
+    _ = wrapper
+    result: JsonObject = {"scopes": []}
+    if "actions" in params.scopes:
+        requested = params.actions if params.actions is not None else list(ACTION_HANDLERS)
+        result["scopes"] = ["actions"]
+        result["actions"] = [a for a in requested if a in ACTION_HANDLERS]
+    return result
+
+
+async def handle_reload_collection(wrapper: AnkiWrapper, params: EmptyParams) -> None:
+    _ = (wrapper, params)
+    await _run(wrapper.reload_collection)
+
+
+async def handle_request_permission(wrapper: AnkiWrapper, params: EmptyParams) -> JsonObject:
+    _ = (wrapper, params)
+    return await _run(wrapper.request_permission)
 
 
 async def handle_deck_names(wrapper: AnkiWrapper, params: EmptyParams) -> list[str]:
@@ -599,6 +627,9 @@ ACTION_HANDLERS: dict[str, tuple[type[BaseModel], Handler[Any]]] = {
     "sync": (CredentialsParams, handle_sync),
     "syncStatus": (CredentialsParams, handle_sync_status),
     "syncMedia": (CredentialsParams, handle_sync_media),
+    "apiReflect": (ApiReflectParams, handle_api_reflect),
+    "reloadCollection": (EmptyParams, handle_reload_collection),
+    "requestPermission": (EmptyParams, handle_request_permission),
     "deckNames": (EmptyParams, handle_deck_names),
     "deckNamesAndIds": (EmptyParams, handle_deck_names_and_ids),
     "deckNameFromId": (DeckIdParams, handle_deck_name_from_id),

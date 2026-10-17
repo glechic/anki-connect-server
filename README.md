@@ -219,6 +219,9 @@ curl -X POST http://localhost:8765/api \
 - `sync` - Sync with AnkiWeb
 - `syncStatus` - Get sync status
 - `syncMedia` - Sync media only
+- `apiReflect` - Introspect the supported actions (scopes: ["actions"])
+- `reloadCollection` - No-op on a headless server (anki's reset is deprecated and does nothing)
+- `requestPermission` - Always granted (headless; no GUI prompt or CORS allowlist)
 - `multi` - Execute multiple actions
 - `importPackage` - Import `.apkg` file
 - `exportPackage` - Export deck to `.apkg`
@@ -317,6 +320,14 @@ curl -X POST http://localhost:8765/api \
 - `storeMediaFile` - Store a media file (base64 `data`, `url`, or server-side `path`)
 - `retrieveMediaFile` - Retrieve a media file
 - `deleteMediaFile` - Delete a media file
+
+#### Not supported (headless server)
+
+These upstream AnkiConnect actions require the Anki desktop GUI or profile
+manager and are intentionally not implemented:
+
+- `getProfiles`, `loadProfile` - multi-profile support is an Anki desktop concept; this server serves a single collection via `ANKICONNECT_COLLECTION_PATH`
+- `guiAddCards`, `guiAnswerCard`, `guiBrowse`, `guiCheckDatabase`, `guiCurrentCard`, `guiDeckBrowser`, `guiDeckOverview`, `guiDeckReview`, `guiEditNote`, `guiExitAnki`, `guiImportFile`, `guiReviewActive`, `guiSelectedNotes`, `guiShowAnswer`, `guiShowQuestion`, `guiStartCardTimer`, `guiUndo` - all `gui*` actions open or drive Anki desktop windows
 
 ## 🤖 MCP Server
 

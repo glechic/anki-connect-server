@@ -62,6 +62,13 @@ class CredentialsParams(_BaseParams):
     password: str | None = None
 
 
+class ApiReflectParams(_BaseParams):
+    """For apiReflect: which scopes to reflect, optionally filtered actions."""
+
+    scopes: list[str] = Field(default_factory=list)
+    actions: list[str] | None = None
+
+
 class GetDecksParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
 

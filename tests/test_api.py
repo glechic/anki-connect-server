@@ -43,6 +43,33 @@ async def test_version_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_api_reflect_action(app_with_wrapper):
+    """Test apiReflect action."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "apiReflect", "version": 6, "params": {"scopes": ["actions"]}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["error"] is None
+        assert data["result"]["scopes"] == ["actions"]
+        assert "version" in data["result"]["actions"]
+
+
+@pytest.mark.asyncio
+async def test_request_permission_action(app_with_wrapper):
+    """Test requestPermission action: always granted headless."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/", json={"action": "requestPermission", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {
+            "result": {"permission": "granted", "requireApikey": False, "version": 6},
+            "error": None,
+        }
+
+
+@pytest.mark.asyncio
 async def test_deck_names_action(app_with_wrapper):
     """Test deckNames action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

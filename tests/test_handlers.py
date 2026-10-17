@@ -15,6 +15,7 @@ from anki_connect_server.handlers import (
     handle_add_notes,
     handle_add_tags,
     handle_answer_cards,
+    handle_api_reflect,
     handle_are_due,
     handle_are_suspended,
     handle_can_add_note,
@@ -71,10 +72,12 @@ from anki_connect_server.handlers import (
     handle_multi,
     handle_notes_info,
     handle_relearn_cards,
+    handle_reload_collection,
     handle_remove_empty_notes,
     handle_remove_tags,
     handle_replace_tags,
     handle_replace_tags_in_all_notes,
+    handle_request_permission,
     handle_retrieve_media_file,
     handle_set_ease_factors,
     handle_set_specific_value_of_card,
@@ -91,6 +94,7 @@ from anki_connect_server.types import (
     AddNotesParams,
     AddTagsParams,
     AnswerCardsParams,
+    ApiReflectParams,
     CardAnswer,
     CardReviewsParams,
     CardsIdsParams,
@@ -169,6 +173,55 @@ class TestMiscHandlers:
         """Test version handler."""
         result = await handle_version(anki_wrapper, EmptyParams())
         assert result == API_VERSION
+
+    @pytest.mark.asyncio
+    async def test_handle_api_reflect(self, anki_wrapper):
+        """apiReflect reports the registered actions for the "actions" scope.
+
+        With actions=None, every registered action is returned (sanity that
+        all six milestones registered their handlers); an explicit actions
+        list is filtered to the registered ones; other scopes are ignored.
+        """
+        # (a) Full registry reflection.
+        result = await handle_api_reflect(anki_wrapper, ApiReflectParams(scopes=["actions"]))
+        assert result["scopes"] == ["actions"]
+        actions = result["actions"]
+        assert isinstance(actions, list)
+        assert "version" in actions
+        assert "answerCards" in actions
+        assert "modelTemplateAdd" in actions
+
+        # (b) Explicit action list filtered to the registered ones.
+        result = await handle_api_reflect(
+            anki_wrapper,
+            ApiReflectParams(scopes=["actions"], actions=["version", "deckNames", "notAnAction"]),
+        )
+        assert result["actions"] == ["version", "deckNames"]
+
+        # (c) Empty scopes: nothing is reflected.
+        result = await handle_api_reflect(anki_wrapper, ApiReflectParams(scopes=[]))
+        assert result == {"scopes": []}
+
+        # (d) Unknown scopes are ignored.
+        result = await handle_api_reflect(anki_wrapper, ApiReflectParams(scopes=["other"]))
+        assert result == {"scopes": []}
+
+    @pytest.mark.asyncio
+    async def test_handle_reload_collection(self, anki_wrapper):
+        """reloadCollection is a documented no-op; the collection stays usable."""
+        result = await handle_reload_collection(anki_wrapper, EmptyParams())
+        assert result is None
+
+        # The collection remains usable after the call.
+        note_id = anki_wrapper.add_note(_note(front="AfterReload"))
+        assert note_id is not None
+        assert note_id in anki_wrapper.find_notes("AfterReload")
+
+    @pytest.mark.asyncio
+    async def test_handle_request_permission(self, anki_wrapper):
+        """requestPermission always returns the granted shape (headless)."""
+        result = await handle_request_permission(anki_wrapper, EmptyParams())
+        assert result == {"permission": "granted", "requireApikey": False, "version": 6}
 
     @pytest.mark.asyncio
     async def test_handle_deck_names(self, anki_wrapper):

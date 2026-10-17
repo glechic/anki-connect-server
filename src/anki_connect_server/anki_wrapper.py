@@ -288,6 +288,30 @@ class AnkiWrapper:
         finally:
             self._sync_lock.release()
 
+    def reload_collection(self) -> None:
+        """Reload the collection (no-op on a headless server).
+
+        Upstream AnkiConnect calls Collection.reset(), but anki 26.8 marks
+        Collection.reset() @deprecated(info="no longer required") with a body
+        that does nothing, so upstream's reloadCollection is itself a no-op
+        on modern anki. There is nothing to reload headlessly, and calling
+        self.col.reset() would only emit a deprecation warning per call.
+        """
+        return
+
+    def request_permission(self) -> JsonObject:
+        """Return the upstream 'granted' permission response (headless).
+
+        Upstream may prompt a GUI dialog or consult a CORS origin allowlist;
+        headless there is no GUI or per-request permission model (API access
+        is granted by the server admin), so this always returns the granted
+        shape with requireApikey False (upstream's shape when no API key is
+        configured).
+        """
+        # 6 is API_VERSION (handlers.py); importing it here would be circular
+        # since handlers.py imports this module.
+        return cast(JsonObject, {"permission": "granted", "requireApikey": False, "version": 6})
+
     def deck_names(self) -> list[str]:
         decks = self.col.decks.all_names_and_ids()
         return [d.name for d in decks]
