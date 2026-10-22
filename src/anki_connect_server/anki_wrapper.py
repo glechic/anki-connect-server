@@ -700,10 +700,16 @@ class AnkiWrapper:
     def model_template_remove(self, model_name: str, template_name: str) -> None:
         """Remove a card template (upstream parity).
 
-        Anki refuses to remove the last remaining template of a model.
+        Anki refuses to remove the last remaining template of a model. anki
+        raises a plain Exception for that case, which the API layer would
+        surface as HTTP 500 instead of a client error envelope, so the
+        refusal is pre-checked here with anki's own message (which upstream
+        AnkiConnect returns verbatim in its 200 error envelope).
         """
         model = self._get_model_or_raise(model_name)
         template = self._get_template_or_raise(model, template_name)
+        if len(self._model_templates(model)) < 2:
+            raise ValueError("must have 1 template")
         self.col.models.remove_template(model, template)
         self._save_model(model)
 

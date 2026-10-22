@@ -530,6 +530,14 @@ class TestModelHandlers:
             await handle_model_template_remove(
                 anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 2")
             )
+        # Removing the last remaining template is refused as a *client* error
+        # (ValueError -> HTTP 200 error envelope), not an unhandled anki
+        # Exception -> HTTP 500 (E2E issue P1-2, suite_5 MD-21).
+        with pytest.raises(ValueError, match="must have 1 template"):
+            await handle_model_template_remove(
+                anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 1")
+            )
+        assert list(anki_wrapper.model_templates(name)) == ["Card 1"]
 
     @pytest.mark.asyncio
     async def test_handle_model_template_rename(self, anki_wrapper):
