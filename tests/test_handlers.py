@@ -2058,8 +2058,32 @@ class TestMultiHandler:
             ),
         )
         assert len(result) == 2
-        assert isinstance(result[0], list)  # deckNames succeeded
-        assert result[1] == {"error": "Unknown action: noSuchAction"}
+        assert isinstance(
+            result[0], list
+        )  # deckNames succeeded (bare value, version defaults to 4)
+        # Upstream format_exception_reply: failures are always
+        # {"result": None, "error": ...} with the same wording as the
+        # top-level dispatch (E2E P2-4 / P3-3).
+        assert result[1] == {"result": None, "error": "Unsupported action: noSuchAction"}
+
+    @pytest.mark.asyncio
+    async def test_handle_multi_per_entry_version_envelopes(self, anki_wrapper):
+        """Success entries follow the entry's own version, like upstream.
+
+        Entries with version >= 5 get {"result": ..., "error": null}; entries
+        without a version (upstream default 4) get the bare value.
+        """
+        result = await handle_multi(
+            anki_wrapper,
+            MultiParams(
+                actions=[
+                    {"action": "version", "version": 6},
+                    {"action": "version"},
+                ]
+            ),
+        )
+        assert result[0] == {"result": 6, "error": None}
+        assert result[1] == 6
 
     @pytest.mark.asyncio
     async def test_handle_multi_sub_action_failure_does_not_abort(self, anki_wrapper):
@@ -2074,7 +2098,9 @@ class TestMultiHandler:
             ),
         )
         assert len(result) == 2
-        assert isinstance(result[0], dict) and "error" in result[0]
+        assert isinstance(result[0], dict)
+        assert result[0]["result"] is None
+        assert isinstance(result[0]["error"], str)
         assert isinstance(result[1], list)
 
     @pytest.mark.asyncio
@@ -2090,7 +2116,10 @@ class TestMultiHandler:
             ),
         )
         assert len(result) == 2
-        assert "error" in result[0]
+        assert result[0] == {
+            "result": None,
+            "error": "Invalid action: expected object, got str",
+        }
         assert isinstance(result[1], list)
 
     @pytest.mark.asyncio

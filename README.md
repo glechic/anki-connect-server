@@ -222,7 +222,7 @@ curl -X POST http://localhost:8765/api \
 - `apiReflect` - Introspect the supported actions (scopes: ["actions"])
 - `reloadCollection` - No-op on a headless server (anki's reset is deprecated and does nothing)
 - `requestPermission` - Always granted (headless; no GUI prompt or CORS allowlist)
-- `multi` - Execute multiple actions
+- `multi` - Execute multiple actions (each entry replies per its own `version`, like upstream: failures always `{"result": null, "error": "..."}`; successes are the bare value for version ≤ 4, or `{"result": ..., "error": null}` for version ≥ 5)
 - `importPackage` - Import `.apkg` file
 - `exportPackage` - Export deck to `.apkg`
 

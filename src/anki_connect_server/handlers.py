@@ -588,36 +588,62 @@ async def handle_export_package(wrapper: AnkiWrapper, params: ExportPackageParam
 
 
 async def handle_multi(wrapper: AnkiWrapper, params: MultiParams) -> list[Any]:
+    """Execute multiple actions, one reply per action (upstream parity).
+
+    Upstream runs each entry through its generic handler, which formats the
+    reply from the entry's own `version` (defaulting to 4): successes are the
+    bare value for version <= 4 and {"result": ..., "error": null} for
+    version >= 5; failures are always {"result": null, "error": "<msg>"}
+    regardless of version (upstream's format_exception_reply ignores the
+    version). E2E issue P2-4: failure entries previously omitted the
+    "result": null key, breaking envelope-parsing clients.
+    """
     results: list[Any] = []
     for action in params.actions:
         if not isinstance(action, dict):
             results.append(
-                {"error": f"Invalid action: expected object, got {type(action).__name__}"}
+                {
+                    "result": None,
+                    "error": f"Invalid action: expected object, got {type(action).__name__}",
+                }
             )
             continue
         action_name = action.get("action", "")
         if not isinstance(action_name, str):
-            results.append({"error": "Invalid action: 'action' must be a string"})
+            results.append({"result": None, "error": "Invalid action: 'action' must be a string"})
             continue
         entry = ACTION_HANDLERS.get(action_name)
         if not entry:
-            results.append({"error": f"Unknown action: {action_name}"})
+            # Same wording as the top-level dispatch (E2E P3-3: the shapes
+            # previously disagreed: "Unknown action" vs "Unsupported action").
+            results.append({"result": None, "error": f"Unsupported action: {action_name}"})
             continue
         model_cls, handler = entry
         action_params = action.get("params", {})
         if not isinstance(action_params, dict):
-            results.append({"error": f"Invalid params for {action_name}: expected object"})
+            results.append(
+                {"result": None, "error": f"Invalid params for {action_name}: expected object"}
+            )
+            continue
+        version = action.get("version", 4)
+        if not isinstance(version, int) or isinstance(version, bool):
+            results.append(
+                {"result": None, "error": "Invalid action: 'version' must be an integer"}
+            )
             continue
         try:
             validated = model_cls(**action_params)
             result = handler(wrapper, validated)
             if asyncio.iscoroutine(result):
                 result = await result
-            results.append(result)
+            if version >= 5:
+                results.append({"result": result, "error": None})
+            else:
+                results.append(result)
         except Exception as e:
-            # Per-action failure does not abort the whole multi call.
-            # AnkiConnect returns an error string per action.
-            results.append({"error": str(e)})
+            # Per-action failure does not abort the whole multi call; the
+            # failure is reported in the per-action error envelope.
+            results.append({"result": None, "error": str(e)})
     return results
 
 
