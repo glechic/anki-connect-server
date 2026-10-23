@@ -6,10 +6,98 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
 ### Added
+- 43 AnkiConnect actions, bringing the server from 48 to **91/110 upstream
+  actions** (94 total with this server's extras) in six milestone clusters
+  (`6bf2e7e`, `b92a7d6`, `0d584e2`, `215a7d0`, `5e17e9e`, `ba5c3fe`):
+  - Scheduling: `answerCards`, `forgetCards`, `relearnCards`,
+    `setEaseFactors`, `setSpecificValueOfCard`.
+  - Reads: `canAddNote`, `cardsModTime`, `deckNameFromId`, `getEaseFactors`,
+    `modelNameFromId`, `suspended`, `getMediaFilesNames`,
+    `removeEmptyNotes` (removes unused note *types* — upstream quirk,
+    documented).
+  - Tags: `replaceTags`, `replaceTagsInAllNotes`, `clearUnusedTags`,
+    `getNoteTags`, `updateNoteTags`.
+  - Revlog & stats: `cardReviews`, `getReviewsOfCards`, `getLatestReviewID`,
+    `getNumCardsReviewedToday`, `getNumCardsReviewedByDay`, `insertReviews`,
+    `getDeckStats` (serves upstream's `total_in_deck` direct-count semantics
+    plus this server's `total_including_children` aggregate),
+    `getCollectionStatsHTML`.
+  - Models: `modelFieldAdd`, `modelFieldRemove`, `modelFieldRename`,
+    `modelFieldReposition`, `modelFieldSetFont`, `modelFieldSetFontSize`,
+    `modelFieldSetDescription`, `modelFieldDescriptions`, `modelFieldFonts`,
+    `modelTemplateAdd`, `modelTemplateRemove`, `modelTemplateRename`,
+    `modelTemplateReposition`, `findAndReplaceInModels`. `modelTemplateAdd`
+    persists the update-existing path (upstream silently discards the
+    change).
+  - Meta: `apiReflect`, `reloadCollection` (documented no-op on anki 26.8),
+    `requestPermission` (always granted on the headless server).
+- `canAddNotesWithErrorDetail` action: batch-create notes and get per-note
+  creation errors for invalid ones, with nothing persisted on failure
+  (`8aa6d5d`, `3bd15a0`).
 - `updateNote` action and `update_note` MCP tool: update the fields and/or
   tags of an existing note in one call (fields are patched, tags replace the
-  existing set; at least one of the two is required, mirroring upstream).
+  existing set; at least one of the two is required, mirroring upstream)
+  (`f2b0034`).
+- GET banner: `GET /` and `GET /api` serve a server/action-count banner
+  (`15a312d`).
+- README "Supported actions" and "Not supported (headless server)" sections
+  documenting the full parity surface, including the 19 intentionally
+  unsupported upstream actions (17 `gui*`, 2 profile).
+- Black-box E2E suite under `e2e/`: seven revision-agnostic, API-only suites
+  (stdlib-only client, every case's criteria inline), `run_all.py` runner,
+  and the sync topology recipe in the sync suite docstring; 322 single-server
+  checks plus 33 sync checks against a local `anki.syncserver` (`5fff9e3`).
+
+### Changed
+- `sync` now seeds a fresh sync account with a **full upload** when the
+  remote collection is empty (anki's `FULL_UPLOAD` requirement, which by
+  protocol construction has no remote data to lose); `SyncResult` outcomes
+  include the new `uploaded` case, and the MCP `sync` tool documents the
+  new semantics (`fe0292e`).
+- Sync and media-sync failures (bad credentials, unreachable endpoint,
+  concurrent lock) return upstream-style HTTP 200 error envelopes instead of
+  HTTP 500, log at WARNING without tracebacks, and auth errors name the
+  required environment variables (`6925ad6`, `cb2dab6`).
+- `multi` reply shapes match upstream exactly: per-entry failures are always
+  `{"result": null, "error": "..."}` and per-entry successes follow the
+  entry's own `version` semantics (`cb8e4c5`).
+- `cardsInfo` returns upstream's full card shape (`ord`, `fieldOrder`,
+  `css`, `type`, `queue`, `due`, `reps`, `lapses`, `left`, `mod`, and
+  scheduling fields; `factor` is the wire name, `ease` kept as a legacy
+  alias) (`69b6e12`).
+- `createModel` returns the created model object instead of null — upstream
+  parity (`fbde96d`).
+- `syncStatus` omits anki 26.8's always-empty `server`/`status` keys
+  (`cb2dab6`).
+- `getLatestReviewID` requires `deck` — the previous `""` default silently
+  created a deck named "blank" (`cb2dab6`).
+- POST endpoints use `response_model=None` so JSON-legal int-keyed objects
+  (upstream's dict-shaped `getDeckStats` / `getReviewsOfCards` results)
+  serialize exactly like upstream (`215a7d0`).
+- Client-facing strictness validated by tests and documented in code:
+  `answerCards` validates the whole batch before applying anything (no
+  partial answers), `insertReviews` uses parameterized SQL and validates
+  9-element rows, `setEaseFactors` reports a clean length-mismatch error,
+  and missing model/field/template/deck/note/card errors use anki's exact
+  upstream messages (`2d87401`).
+
+### Fixed
+- `getMediaFilesNames` globs are confined to the media directory:
+  absolute or traversal patterns (`/etc/*`, `../etc/*`) no longer list
+  arbitrary container paths (`590f2c6`).
+- Removing a model's last template returns a clean client error envelope
+  instead of HTTP 500 (`6d8a19b`).
+- Invalid client template data raises anki's `CardTypeError` into the HTTP
+  200 error envelope instead of a 500 (`5e17e9e`).
+- Config-defaults unit test no longer fails inside `COLLECTION_PATH`-only
+  (Docker) deployments; the container runs the full 304-test unit suite
+  green (`15a312d`).
+- CI: buildx GHA cache export is non-fatal — PR-triggered `workflow_run`
+  jobs get read-only Actions cache access and `ignore-error=true` keeps the
+  Docker build green (`776bed5`).
 
 ## [0.4.0] - 2026-09-27
 

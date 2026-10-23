@@ -1,6 +1,6 @@
 [project]
 name = "anki-connect-server"
-version = "0.4.0"
+version = "0.5.0"
 description = "Headless AnkiConnect-compatible REST API server with AnkiWeb sync"
 readme = "README.md"
 requires-python = ">=3.12"
