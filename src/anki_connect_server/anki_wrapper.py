@@ -107,6 +107,24 @@ class AnkiWrapper:
         if progress is not None:
             progress(message)
 
+    @staticmethod
+    def _auth_failed(endpoint: str | None, error: Exception) -> SyncError:
+        """Build the client-facing sync login error, including the endpoint.
+
+        anki's own network errors drop the URL from their message ("error
+        sending request for url ()"), which leaves users diagnosing a
+        blank; name the endpoint explicitly (E2E suite_8 SY-08).
+        """
+        target = endpoint or "the default AnkiWeb endpoint"
+        return SyncError(f"AnkiWeb authentication failed for {target}: {error}")
+
+    def _login(self, user: str, pass_: str, url: str | None) -> Any:
+        """Log in to the sync server, mapping auth failures to SyncError."""
+        try:
+            return self.col.sync_login(username=user, password=pass_, endpoint=url)
+        except Exception as error:
+            raise self._auth_failed(url, error) from error
+
     def _full_download(self, auth: Any, server_usn: int) -> None:
         self.col.close_for_full_sync()
         self._closed = True
@@ -215,10 +233,7 @@ class AnkiWrapper:
         try:
             user, pass_, url = self._credentials(username, password, endpoint, operation="sync")
             self._report(progress, "Authenticating with AnkiWeb")
-            try:
-                auth = self.col.sync_login(username=user, password=pass_, endpoint=url)
-            except Exception as error:
-                raise SyncError(f"AnkiWeb authentication failed: {error}") from error
+            auth = self._login(user, pass_, url)
 
             self._report(progress, "Synchronizing collection")
             try:
@@ -1666,11 +1681,7 @@ class AnkiWrapper:
                 "ANKICONNECT_ANKIWEB_USER and ANKICONNECT_ANKIWEB_PASS required for sync status"
             )
 
-        auth = self.col.sync_login(
-            username=user,
-            password=pass_,
-            endpoint=url,
-        )
+        auth = self._login(user, pass_, url)
         status = self.col.sync_status(auth)
         return {
             "server": getattr(status, "server", str(status)),
@@ -1694,7 +1705,7 @@ class AnkiWrapper:
         if not self._sync_lock.acquire(blocking=False):
             raise SyncError("A synchronization is already in progress")
         try:
-            auth = self.col.sync_login(username=user, password=pass_, endpoint=url)
+            auth = self._login(user, pass_, url)
             self.col.sync_media(auth)
             return self._wait_for_media(progress, timeout=timeout, poll_interval=poll_interval)
         finally:

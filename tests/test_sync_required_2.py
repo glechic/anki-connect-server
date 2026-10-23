@@ -271,6 +271,32 @@ class TestSyncSafety:
 
         assert "Test error" in caplog.text
 
+    def test_auth_failure_names_endpoint(self, patched_config):
+        """Auth failures include the endpoint (E2E suite_8 SY-08: anki's own
+        network error drops the URL from its message)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("error sending request for url ()"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match=r"for http://sync.example:8270/"):
+                wrapper.sync_to_ankiweb(endpoint="http://sync.example:8270/")
+
+    def test_sync_status_auth_failure_is_sync_error(self, patched_config):
+        """syncStatus login failures surface as SyncError (mapped to the 200
+        error envelope), not as raw anki exceptions -> HTTP 500 (E2E P2-3)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("Email or password was incorrect"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="authentication failed"):
+                wrapper.sync_status(endpoint="http://sync.example:8270/")
+
+    def test_sync_media_only_auth_failure_is_sync_error(self, patched_config):
+        """syncMedia login failures surface as SyncError too (E2E P2-3)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("Email or password was incorrect"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="authentication failed"):
+                wrapper.sync_media_only(endpoint="http://sync.example:8270/")
+
 
 class TestCollectionGeneration:
     """collection_generation increments whenever sync reopens the collection.

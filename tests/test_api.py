@@ -713,6 +713,29 @@ async def test_server_error_returns_500(app_with_wrapper, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sync_error_returns_200_with_error(app_with_wrapper, monkeypatch):
+    """SyncError (client-caused sync failure) is reported in-body with HTTP 200
+    like upstream AnkiConnect's error envelope, not as a server 500 (E2E P2-3:
+    wrong credentials / unreachable endpoint / concurrent-lock were 500s)."""
+    from anki_connect_server import handlers
+    from anki_connect_server.sync import SyncError
+
+    async def bad_sync(wrapper, params):
+        raise SyncError("AnkiWeb authentication failed for http://sync.example:8270/: nope")
+
+    monkeypatch.setitem(handlers.ACTION_HANDLERS, "boom", (handlers.EmptyParams, bad_sync))
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post("/", json={"action": "boom", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] is None
+        assert "authentication failed for http://sync.example:8270/" in data["error"]
+
+
+@pytest.mark.asyncio
 async def test_validation_error_returns_200_with_error(app_with_wrapper):
     """Client errors (ValueError subclass) are reported in-body with HTTP 200
     per the AnkiConnect convention so existing clients keep working."""

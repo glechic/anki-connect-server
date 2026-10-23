@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import Config, get_config
 from anki_connect_server.handlers import dispatch
+from anki_connect_server.sync import SyncError
 from anki_connect_server.types import JsonValue
 
 logger = logging.getLogger(__name__)
@@ -81,11 +82,16 @@ async def handle_request(req: AnkiConnectRequest, request: Request) -> JsonValue
     wrapper = get_request_wrapper(request)
     try:
         result = await dispatch(req.action, req.params, wrapper)
-    except ValueError as e:
+    except (ValueError, SyncError) as e:
         # Client-facing errors (unknown action, missing/invalid params) are
         # reported in the response body per the AnkiConnect convention with
-        # HTTP 200 so existing clients keep working. The error envelope is
-        # sent regardless of the requested version, matching upstream.
+        # HTTP 200 so existing clients keep working. SyncError covers
+        # client-caused sync failures too (wrong credentials, unreachable
+        # endpoint, a concurrent sync already in progress) — upstream
+        # AnkiConnect reports those in the same 200 error envelope, and a
+        # 500 would make clients treat a bad password as a server fault.
+        # The error envelope is sent regardless of the requested version,
+        # matching upstream.
         return {"result": None, "error": str(e)}
     # Any other exception (corrupted collection, Anki backend crash, etc.) is
     # a server error and propagates as HTTP 500 via the handler below.
