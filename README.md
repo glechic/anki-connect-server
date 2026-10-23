@@ -316,7 +316,7 @@ curl -X POST http://localhost:8765/api \
 
 #### Media
 - `getMediaDirPath` - Get media directory path
-- `getMediaFilesNames` - List media file names matching a glob pattern
+- `getMediaFilesNames` - List media file names matching a glob pattern (patterns are confined to the media directory; absolute paths and `..` are rejected)
 - `storeMediaFile` - Store a media file (base64 `data`, `url`, or server-side `path`)
 - `retrieveMediaFile` - Retrieve a media file
 - `deleteMediaFile` - Delete a media file

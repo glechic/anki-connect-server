@@ -1898,6 +1898,26 @@ class TestMediaHandlers:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_handle_get_media_files_names_rejects_traversal(self, anki_wrapper):
+        """Absolute patterns and .. components are client errors (E2E P2-5).
+
+        Upstream's os.path.join(media_dir, pattern) discards the media-dir
+        base for an absolute pattern, turning the glob into a directory
+        listing of arbitrary host paths — a remote listing primitive on an
+        unauthenticated server, so it is refused instead.
+        """
+        for pattern in ("/etc/*", "/media/../etc/*", "../etc/*", "media/../../etc/*"):
+            with pytest.raises(ValueError, match="relative to the media directory"):
+                await handle_get_media_files_names(
+                    anki_wrapper, GetMediaFilesNamesParams(pattern=pattern)
+                )
+        # Plain relative patterns are unaffected.
+        assert (
+            await handle_get_media_files_names(anki_wrapper, GetMediaFilesNamesParams(pattern="*"))
+            == []
+        )
+
+    @pytest.mark.asyncio
     async def test_handle_store_media_file_via_data(self, anki_wrapper):
         """storeMediaFile with base64 data writes the decoded bytes."""
         from anki_connect_server.handlers import dispatch

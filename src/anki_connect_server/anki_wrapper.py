@@ -1590,7 +1590,19 @@ class AnkiWrapper:
         return self.col.media.dir()
 
     def get_media_files_names(self, pattern: str = "*") -> list[str]:
-        """List media file names matching a glob pattern (upstream parity)."""
+        """List media file names matching a glob pattern (upstream parity, hardened).
+
+        Upstream globs os.path.join(media_dir, pattern), which lets an
+        absolute pattern discard the media-dir base entirely ("os.path.join"
+        semantics) — an acceptable quirk in a desktop add-on, but on this
+        unauthenticated server it is a remote directory-listing primitive
+        over arbitrary container paths (E2E suite_2 RD-17). Absolute
+        patterns and parent-directory components are refused as client
+        errors instead; the same check upstream applies is unaffected
+        (plain relative patterns behave identically).
+        """
+        if os.path.isabs(pattern) or ".." in pattern.split("/"):  # noqa: PTH117
+            raise ValueError(f"pattern must be relative to the media directory: {pattern!r}")
         path = os.path.join(self.col.media.dir(), pattern)  # noqa: PTH118
         return [os.path.basename(p) for p in glob.glob(path)]  # noqa: PTH119, PTH207
 
