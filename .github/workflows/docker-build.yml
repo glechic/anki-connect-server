@@ -71,8 +71,13 @@ jobs:
           push: ${{ steps.should_push.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # PR-triggered workflow_run jobs get read-only Actions cache
+          # access (2026-06 cache policy for untrusted triggers), which
+          # fails builds with "error writing layer blob: failed to reserve
+          # cache". Cache export is an optimization, so keep cache-from and
+          # make export failures non-fatal instead of failing the build.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
   update-description:
     name: update-description
