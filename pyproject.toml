@@ -72,6 +72,9 @@ ignore = ["N815"]  # AnkiConnect wire fields use camelCase
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S104", "S105", "S106", "S110", "T201", "PTH", "PT018", "PT011", "RUF059", "SIM105", "SIM117"]
+# E2E suites are CLI tools that print a ledger, assert, and talk HTTP only to
+# an operator-provided base URL (S310/S603: localhost urllib/subprocess).
+"e2e/**" = ["S101", "S310", "S603", "T201"]
 
 [tool.ruff.format]
 docstring-code-format = true
