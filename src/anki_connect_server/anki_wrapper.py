@@ -331,6 +331,15 @@ class AnkiWrapper:
                 media=media,
                 server_message=result.server_message or None,
             )
+        except (ValueError, SyncError) as e:
+            # Client-caused failures (missing credentials, bad auth, lock
+            # contention) reach the API layer's 200 error envelope; they are
+            # expected conditions, not server faults — log at WARNING without
+            # a traceback so the logs don't look like a crash (E2E P3-4).
+            logger.warning("AnkiWeb sync failed: %s", e)
+            if self._closed:
+                self._reopen_collection()
+            raise
         except Exception:
             logger.exception("AnkiWeb sync failed")
             if self._closed:
@@ -1042,7 +1051,10 @@ class AnkiWrapper:
         try:
             note_obj = self.col.get_note(NoteId(note_id))
         except Exception as e:
-            raise ValueError(f"Note {note_id} not found: {e}") from e
+            # Same clean wording as getNoteTags (E2E P3-2: the previous
+            # message embedded anki's raw NotFoundError text, telling users
+            # to "use the Check Database action" over a bad note id).
+            raise ValueError(f"Note was not found: {note_id}") from e
         note_obj.tags = [str(t) for t in tags]
         self.col.update_note(note_obj)
 
@@ -1721,11 +1733,16 @@ class AnkiWrapper:
 
         auth = self._login(user, pass_, url)
         status = self.col.sync_status(auth)
-        return {
-            "server": getattr(status, "server", str(status)),
-            "status": getattr(status, "status", str(status)),
-            "required": getattr(status, "required", 0),
-        }
+        # anki 26.8's sync status carries only the sync requirement; server/
+        # status are surfaced when the underlying version provides them, and
+        # omitted otherwise instead of returning always-empty strings
+        # (E2E P3-9).
+        result: JsonObject = {"required": getattr(status, "required", 0)}
+        for key in ("server", "status"):
+            value = getattr(status, key, None)
+            if value:
+                result[key] = str(value)
+        return result
 
     def sync_media_only(
         self,

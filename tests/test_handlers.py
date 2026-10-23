@@ -1262,8 +1262,10 @@ class TestNoteHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_update_note_tags_missing_note_raises(self, anki_wrapper):
-        """updateNoteTags for a nonexistent note id raises a client-facing error."""
-        with pytest.raises(ValueError, match="not found"):
+        """updateNoteTags for a nonexistent note id raises a client-facing error
+        with the same clean wording as getNoteTags (E2E P3-2: it previously
+        embedded anki's raw NotFoundError text)."""
+        with pytest.raises(ValueError, match="Note was not found: 999999999"):
             await handle_update_note_tags(
                 anki_wrapper, UpdateNoteTagsParams(note=999999999, tags=["x"])
             )
@@ -1748,6 +1750,14 @@ class TestStatsHandlers:
         assert result > 0
 
     @pytest.mark.asyncio
+    async def test_handle_get_latest_review_id_requires_deck(self, anki_wrapper):
+        """deck is required: with a "" default anki's decks.id("") would
+        silently create a deck named "blank" (E2E P3-7)."""
+
+        with pytest.raises(ValidationError, match="Field required"):
+            await handle_get_latest_review_id(anki_wrapper, DeckNameParams())  # type: ignore[call-arg]
+
+    @pytest.mark.asyncio
     async def test_handle_get_num_cards_reviewed_today(self, anki_wrapper):
         """getNumCardsReviewedToday counts reviews made since the day start."""
         anki_wrapper.add_note(_note(front="ReviewedToday"))
@@ -2084,6 +2094,29 @@ class TestSyncHandlers:
         assert result["server"] == "sync7.ankiweb.net"
         assert result["status"] == "ok"
         assert result["required"] == 0
+
+    @pytest.mark.asyncio
+    async def test_handle_sync_status_omits_empty_fields(self, anki_wrapper, monkeypatch):
+        """syncStatus surfaces server/status only when the backend provides them.
+
+        anki 26.8's sync status carries only the sync requirement; the
+        always-empty server/status strings are omitted instead of shipped
+        as "" (E2E P3-9)."""
+        from unittest.mock import Mock
+
+        class BareStatus:
+            required = 1
+
+        mock_auth = Mock(hkey="test_key")
+        monkeypatch.setattr(anki_wrapper.col, "sync_login", Mock(return_value=mock_auth))
+        monkeypatch.setattr(anki_wrapper.col, "sync_status", Mock(return_value=BareStatus()))
+
+        result = await handle_sync_status(
+            anki_wrapper,
+            CredentialsParams(username="user@example.com", password="pw"),
+        )
+
+        assert result == {"required": 1}
 
 
 class TestMultiHandler:

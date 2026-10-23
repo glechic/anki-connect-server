@@ -343,9 +343,14 @@ class CardReviewsParams(_BaseParams):
 
 
 class DeckNameParams(_BaseParams):
-    """For actions keyed on a single deck name (getLatestReviewID)."""
+    """For actions keyed on a single deck name (getLatestReviewID).
 
-    deck: str = ""
+    deck is required: with a default of "" anki's decks.id("") would
+    silently CREATE a deck named "blank" (E2E P3-7); a missing param is
+    now a validation error, matching upstream (which errors without it).
+    """
+
+    deck: str
 
 
 class InsertReviewsParams(_BaseParams):

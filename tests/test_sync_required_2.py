@@ -261,11 +261,15 @@ class TestSyncSafety:
         mock_col.abort_media_sync.assert_called_once()
 
     def test_error_logged_on_failure(self, patched_config, caplog):
-        """Errors during sync are logged with the exception."""
+        """Errors during sync are logged with the exception detail.
+
+        Since P2-3/P3-4, SyncError failures reach clients in the 200 error
+        envelope and log at WARNING (expected client-facing conditions);
+        the underlying error detail must still be in the message."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_DOWNLOAD)
         mock_col.full_upload_or_download = Mock(side_effect=ValueError("Test error"))
         with _make_wrapper(mock_col) as wrapper:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.WARNING):
                 with pytest.raises(SyncError, match="Full collection download failed"):
                     wrapper.sync_to_ankiweb()
 
@@ -296,6 +300,41 @@ class TestSyncSafety:
         with _make_wrapper(mock_col) as wrapper:
             with pytest.raises(SyncError, match="authentication failed"):
                 wrapper.sync_media_only(endpoint="http://sync.example:8270/")
+
+    def test_client_caused_sync_failure_logs_warning_not_exception(self, patched_config, caplog):
+        """Expected client-caused sync failures log at WARNING with no
+        traceback, not as ERROR-looking crashes (E2E P3-4)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("Email or password was incorrect"))
+        with _make_wrapper(mock_col) as wrapper:
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(SyncError, match="authentication failed"):
+                    wrapper.sync_to_ankiweb(endpoint="http://sync.example:8270/")
+
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+        assert any(
+            r.levelname == "WARNING" and "AnkiWeb sync failed" in r.message for r in caplog.records
+        )
+        assert all(r.exc_info is None for r in caplog.records)
+
+    def test_missing_credentials_logs_warning_not_exception(self, monkeypatch, caplog):
+        """Missing credentials are a client error: WARNING log, no traceback,
+        and the ValueError reaches the API's 200 envelope (E2E P3-4)."""
+        from anki_connect_server.config import get_config
+
+        cfg = get_config()
+        monkeypatch.setattr(cfg, "ANKIWEB_USER", None)
+        monkeypatch.setattr(cfg, "ANKIWEB_PASS", None)
+        mock_col = Mock()
+        with _make_wrapper(mock_col) as wrapper:
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(ValueError, match="required for sync"):
+                    wrapper.sync_to_ankiweb()
+
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+        assert all(r.exc_info is None for r in caplog.records)
+        # No auth was even attempted.
+        mock_col.sync_login.assert_not_called()
 
 
 class TestCollectionGeneration:
