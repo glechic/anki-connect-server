@@ -127,16 +127,37 @@ class TestSyncRequirementResolution:
         assert mock_col.full_upload_or_download.call_args[1]["upload"] is False
         mock_col.reopen.assert_called_once_with(after_full_sync=True)
 
-    def test_full_upload_raises_and_preserves_local(self, patched_config):
-        """FULL_UPLOAD raises SyncError by policy; local data is not uploaded."""
+    def test_full_upload_uploads_with_uploaded_outcome(self, patched_config):
+        """FULL_UPLOAD seeds the empty remote and reports an uploaded outcome.
+
+        FULL_UPLOAD is only requested when the remote is empty and the local
+        collection has data (protocol guarantee, see anki's
+        compared_to_remote), so uploading cannot destroy remote data; it is
+        the seeding path for a fresh sync account (E2E issue P1-1, suite_8
+        SY-03/04/05).
+        """
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD, server_media_usn=42)
         with _make_wrapper(mock_col) as wrapper:
-            with pytest.raises(SyncError, match="full upload"):
-                wrapper.sync_to_ankiweb()
+            result = wrapper.sync_to_ankiweb()
 
-        mock_col.full_upload_or_download.assert_not_called()
-        # close_for_full_sync is not called for the upload branch
-        mock_col.close_for_full_sync.assert_not_called()
+        assert isinstance(result, SyncResult)
+        assert result.collection.outcome is CollectionSyncOutcome.UPLOADED
+        assert result.collection.download_reason is None
+        assert result.collection.local_data_replaced is False
+        mock_col.full_upload_or_download.assert_called_once()
+        assert mock_col.full_upload_or_download.call_args[1]["upload"] is True
+        assert mock_col.full_upload_or_download.call_args[1]["server_usn"] == 42
+        # Mirrors _full_download: reattach with reopen(after_full_sync=True)
+        # instead of constructing a new Collection ("Anki already open").
+        mock_col.reopen.assert_called_once_with(after_full_sync=True)
+
+    def test_full_upload_failure_raises_sync_error(self, patched_config):
+        """If the upload fails, a SyncError is raised (not the raw exception)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
+        mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="Full collection upload failed"):
+                wrapper.sync_to_ankiweb()
 
     def test_normal_sync_merges(self, patched_config):
         """NORMAL_SYNC reports a merged outcome and reopens the collection."""
@@ -298,14 +319,29 @@ class TestCollectionGeneration:
 
         assert wrapper.collection_generation == 1
 
-    def test_full_upload_does_not_increment(self, patched_config):
-        """FULL_UPLOAD raises before any reopen, so generation stays at 0."""
+    def test_full_upload_increments(self, patched_config):
+        """FULL_UPLOAD reopens via _full_upload's reattach (+1)."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
         with _make_wrapper(mock_col) as wrapper:
-            with pytest.raises(SyncError, match="full upload"):
+            assert wrapper.collection_generation == 0
+            wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 1
+
+    def test_failed_upload_still_increments(self, patched_config):
+        """_full_upload reopens in a finally, so even a failed upload
+        increments generation (the collection is reopened to a usable state)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
+        mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="Full collection upload failed"):
                 wrapper.sync_to_ankiweb()
 
-        assert wrapper.collection_generation == 0
+        # On failure reopen() must not be called (the backend collection is
+        # closed); _full_upload's finally called _reopen_collection before
+        # the SyncError wrapper raised, so generation advanced.
+        mock_col.reopen.assert_not_called()
+        assert wrapper.collection_generation == 1
 
     def test_repeated_syncs_accumulate(self, patched_config):
         """Each successful sync increments the generation by 1."""

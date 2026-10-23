@@ -129,6 +129,31 @@ class AnkiWrapper:
                 # back to opening a fresh handle.
                 self._reopen_collection()
 
+    def _full_upload(self, auth: Any, server_usn: int) -> None:
+        """Upload the whole collection to an empty remote (mirrors _full_download).
+
+        The backend service reopens the collection internally after a full
+        upload regardless of outcome (rslib's full_sync_inner replaces the
+        collection handle), so the Python-side handle is reattached the same
+        way as after a download.
+        """
+        self.col.close_for_full_sync()
+        self._closed = True
+        try:
+            self.col.full_upload_or_download(auth=auth, server_usn=server_usn, upload=True)
+            self.col.reopen(after_full_sync=True)
+            self._closed = False
+            self._collection_generation += 1
+            logger.debug(
+                "Reattached Anki collection at %s after full upload",
+                self.collection_path,
+            )
+        finally:
+            if self._closed:
+                # Upload failed; the backend collection is closed, so fall
+                # back to opening a fresh handle.
+                self._reopen_collection()
+
     @staticmethod
     def _media_counters(status: MediaSyncStatusResponse) -> tuple[str, str, str]:
         if not status.HasField("progress"):
@@ -233,14 +258,25 @@ class AnkiWrapper:
                     local_data_replaced=True,
                 )
             elif result.required == SyncCollectionResponse.FULL_UPLOAD:
-                # Full uploads are disabled by policy: the AnkiWeb collection is
-                # empty and only a full upload would populate it, which would
-                # destroy any remote data the user has. Preserve the local
-                # collection and surface a clear error so the user can decide.
-                raise SyncError(
-                    "AnkiWeb collection is empty and only a full upload is possible; "
-                    "full uploads are disabled by policy and the local collection "
-                    "was preserved"
+                # FULL_UPLOAD is only ever requested when the remote
+                # collection is empty and the local one has data: anki's
+                # compared_to_remote computes download_ok = !remote.empty
+                # || local.empty, and FULL_UPLOAD implies download_ok == false
+                # (rslib/src/backend/sync.rs), i.e. remote.empty. There is no
+                # remote data to destroy, so uploading is the safe seeding
+                # path for a fresh deployment against a new sync account.
+                # Desktop Anki performs the same upload on FULL_UPLOAD.
+                # (The genuinely ambiguous case is FULL_SYNC, where the
+                # remote may have data; that branch still resolves by
+                # downloading, preserving this server's remote-wins policy.)
+                self._report(progress, "Uploading the collection to the empty remote")
+                try:
+                    self._full_upload(auth, result.server_media_usn)
+                except Exception as error:
+                    raise SyncError(f"Full collection upload failed: {error}") from error
+                collection = CollectionSyncResult(
+                    outcome=CollectionSyncOutcome.UPLOADED,
+                    local_data_replaced=False,
                 )
             elif result.required == SyncCollectionResponse.NORMAL_SYNC:
                 collection = CollectionSyncResult(
