@@ -1303,6 +1303,38 @@ class TestCardHandlers:
         card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
         result = await handle_cards_info(anki_wrapper, CardsIdsParams(cards=card_ids))
         assert len(result) > 0
+        # Upstream parity (E2E P3-1): the full card shape is exposed, with
+        # `factor` as the ease factor's wire name and `ease` kept as a
+        # legacy alias of the same value.
+        entry = result[0]
+        assert set(entry) == {
+            "cardId",
+            "fields",
+            "fieldOrder",
+            "question",
+            "answer",
+            "modelName",
+            "ord",
+            "deckName",
+            "css",
+            "factor",
+            "ease",
+            "interval",
+            "note",
+            "type",
+            "queue",
+            "due",
+            "reps",
+            "lapses",
+            "left",
+            "mod",
+        }
+        assert entry["note"] == note_id
+        assert entry["factor"] == entry["ease"]
+        assert isinstance(entry["factor"], int)
+        assert isinstance(entry["mod"], int)
+        assert entry["deckName"] == "Default"
+        assert entry["modelName"] == "Basic"
 
     @pytest.mark.asyncio
     async def test_handle_cards_mod_time(self, anki_wrapper):

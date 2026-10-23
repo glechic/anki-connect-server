@@ -1195,14 +1195,28 @@ class AnkiWrapper:
                     JsonObject,
                     {
                         "cardId": int(card.id),
-                        "note": int(note.id),
-                        "deckName": self.col.decks.name(card.did),
-                        "modelName": model["name"] if model else "",
                         "fields": fields,
-                        "interval": card.ivl,
-                        "ease": card.factor,
+                        "fieldOrder": card.ord,
                         "question": card.q(reload=True),  # type: ignore[union-attr]
                         "answer": card.a(),  # type: ignore[union-attr]
+                        "modelName": model["name"] if model else "",
+                        "ord": card.ord,
+                        "deckName": self.col.decks.name(card.did),
+                        "css": model["css"] if model else "",
+                        # Upstream's wire name for the ease factor (10x the
+                        # ease percentage); "ease" is kept as a legacy alias
+                        # for this server's existing clients (E2E P3-1).
+                        "factor": card.factor,
+                        "ease": card.factor,
+                        "interval": card.ivl,
+                        "note": int(note.id),
+                        "type": card.type,
+                        "queue": card.queue,
+                        "due": card.due,
+                        "reps": card.reps,
+                        "lapses": card.lapses,
+                        "left": card.left,
+                        "mod": card.mod,
                     },
                 )
             )
