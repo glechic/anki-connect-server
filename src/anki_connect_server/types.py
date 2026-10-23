@@ -1,4 +1,4 @@
-from typing import Any, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -62,6 +62,13 @@ class CredentialsParams(_BaseParams):
     password: str | None = None
 
 
+class ApiReflectParams(_BaseParams):
+    """For apiReflect: which scopes to reflect, optionally filtered actions."""
+
+    scopes: list[str] = Field(default_factory=list)
+    actions: list[str] | None = None
+
+
 class GetDecksParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
 
@@ -102,6 +109,18 @@ class RemoveDeckConfigIdParams(_BaseParams):
     configId: int = 1
 
 
+class DeckIdParams(_BaseParams):
+    """For actions keyed on a single deck id."""
+
+    deckId: int
+
+
+class ModelIdParams(_BaseParams):
+    """For actions keyed on a single model id."""
+
+    modelId: int
+
+
 class ModelNameParams(_BaseParams):
     """Shared by actions that only need a modelName."""
 
@@ -122,6 +141,79 @@ class ModelTemplateUpdateParams(_BaseParams):
 
 class ModelStylingUpdateParams(_BaseParams):
     model: ModelStylingUpdate
+
+
+class ModelFieldAddParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    index: int | None = None
+
+
+class ModelFieldRemoveParams(_BaseParams):
+    modelName: str
+    fieldName: str
+
+
+class ModelFieldRenameParams(_BaseParams):
+    modelName: str
+    oldFieldName: str
+    newFieldName: str
+
+
+class ModelFieldRepositionParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    index: int
+
+
+class ModelFieldSetFontParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    font: str
+
+
+class ModelFieldSetFontSizeParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    fontSize: int
+
+
+class ModelFieldSetDescriptionParams(_BaseParams):
+    modelName: str
+    fieldName: str
+    description: str
+
+
+class ModelTemplateAddParams(_BaseParams):
+    modelName: str
+    template: CardTemplateInput
+
+
+class ModelTemplateRemoveParams(_BaseParams):
+    modelName: str
+    templateName: str
+
+
+class ModelTemplateRenameParams(_BaseParams):
+    modelName: str
+    oldTemplateName: str
+    newTemplateName: str
+
+
+class ModelTemplateRepositionParams(_BaseParams):
+    modelName: str
+    templateName: str
+    index: int
+
+
+class FindAndReplaceInModelsParams(_BaseParams):
+    # An empty modelName means every model in the collection.
+    modelName: str = ""
+    findText: str
+    replaceText: str
+    front: bool = True
+    back: bool = True
+    css: bool = True
 
 
 class NoteFieldUpdate(BaseModel):
@@ -168,6 +260,31 @@ class AddTagsParams(_BaseParams):
     tags: str = ""
 
 
+class ReplaceTagsParams(_BaseParams):
+    # replaceTags uses the upstream AnkiConnect wire names (snake_case).
+    notes: list[int] = Field(default_factory=list)
+    tag_to_replace: str
+    replace_with_tag: str
+
+
+class ReplaceTagsInAllNotesParams(_BaseParams):
+    # replaceTagsInAllNotes uses the upstream AnkiConnect wire names (snake_case).
+    tag_to_replace: str
+    replace_with_tag: str
+
+
+class GetNoteTagsParams(_BaseParams):
+    """For getNoteTags, keyed on a single note id."""
+
+    note: int
+
+
+class UpdateNoteTagsParams(_BaseParams):
+    # updateNoteTags uses the upstream AnkiConnect wire names (snake_case).
+    note: int
+    tags: list[str] | str
+
+
 class FindNotesParams(_BaseParams):
     query: str
 
@@ -182,9 +299,76 @@ class CardsIdsParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
 
 
+class SuspendedParams(_BaseParams):
+    """For the suspended action, keyed on a single card id."""
+
+    card: int
+
+
 class GetIntervalsParams(_BaseParams):
     cards: list[int] = Field(default_factory=list)
     complete: bool = False
+
+
+class CardAnswer(BaseModel):
+    """A single card answer inside answerCards (1=Again, 2=Hard, 3=Good, 4=Easy)."""
+
+    model_config = ConfigDict(extra="forbid")
+    cardId: int
+    ease: Literal[1, 2, 3, 4]
+
+
+class AnswerCardsParams(_BaseParams):
+    answers: list[CardAnswer] = Field(default_factory=list)
+
+
+class SetEaseFactorsParams(_BaseParams):
+    cards: list[int] = Field(default_factory=list)
+    easeFactors: list[int] = Field(default_factory=list)
+
+
+class SetSpecificValueOfCardParams(_BaseParams):
+    # warning_check uses the upstream AnkiConnect wire name (snake_case).
+    card: int
+    keys: list[str] = Field(default_factory=list)
+    newValues: list[Any] = Field(default_factory=list)
+    warning_check: bool = False
+
+
+class CardReviewsParams(_BaseParams):
+    """For cardReviews, keyed on a deck name and a starting review id."""
+
+    deck: str
+    startID: int
+
+
+class DeckNameParams(_BaseParams):
+    """For actions keyed on a single deck name (getLatestReviewID).
+
+    deck is required: with a default of "" anki's decks.id("") would
+    silently CREATE a deck named "blank" (E2E P3-7); a missing param is
+    now a validation error, matching upstream (which errors without it).
+    """
+
+    deck: str
+
+
+class InsertReviewsParams(_BaseParams):
+    """For insertReviews: raw revlog rows of 9 integers each."""
+
+    reviews: list[list[int]] = Field(default_factory=list)
+
+
+class GetDeckStatsParams(_BaseParams):
+    decks: list[str] = Field(default_factory=list)
+
+
+class GetCollectionStatsHTMLParams(_BaseParams):
+    wholeCollection: bool = True
+
+
+class GetMediaFilesNamesParams(_BaseParams):
+    pattern: str = "*"
 
 
 class StoreMediaFileParams(_BaseParams):

@@ -1,11 +1,22 @@
 """Tests for config module."""
 
 
-def test_config_defaults():
-    """Test that config has correct defaults."""
+def test_config_defaults(monkeypatch):
+    """Test that config has correct defaults.
+
+    The deployment environment may export ANKICONNECT_* variables (e.g. the
+    Docker image sets ANKICONNECT_BIND=0.0.0.0 for port mapping), which must
+    not leak into the defaults assertion (E2E P3-21: this test failed
+    in-container because of the image's ENV).
+    """
+    import os
+
+    for var in [k for k in os.environ if k.startswith("ANKICONNECT_")]:
+        monkeypatch.delenv(var, raising=False)
+
     from anki_connect_server.config import Config
 
-    cfg = Config(COLLECTION_PATH="/test/path.anki2")
+    cfg = Config(COLLECTION_PATH="/test/path.anki2", _env_file=None)  # type: ignore[call-arg]
     assert cfg.PORT == 8765
     assert cfg.BIND == "127.0.0.1"
 

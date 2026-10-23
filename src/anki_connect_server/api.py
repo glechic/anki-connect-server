@@ -4,12 +4,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import Config, get_config
-from anki_connect_server.handlers import dispatch
+from anki_connect_server.handlers import API_VERSION, dispatch
+from anki_connect_server.sync import SyncError
 from anki_connect_server.types import JsonValue
 
 logger = logging.getLogger(__name__)
@@ -69,19 +70,36 @@ async def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
+@app.get("/", response_model=None, include_in_schema=False)
+@app.get("/api", response_model=None, include_in_schema=False)
+async def root_banner() -> PlainTextResponse:
+    """Serve a version banner on GET (upstream answers empty-body requests
+    with "AnkiConnect v.<version>"); previously a GET returned 405 (E2E P3-6)."""
+    return PlainTextResponse(f"AnkiConnect v.{API_VERSION} (anki-connect-server); POST /api")
+
+
 # No response_model: legacy (version ≤4) requests return the bare result,
-# which does not fit the v6 envelope shape.
-@app.post("/")
-@app.post("/api")
+# which does not fit the v6 envelope shape. Passing response_model=None
+# explicitly is required: FastAPI would otherwise infer a response model
+# from the JsonValue return annotation and reject JSON-legal payloads such
+# as getDeckStats' int-keyed dict (JSON stringifies such keys, but pydantic
+# requires str keys).
+@app.post("/", response_model=None)
+@app.post("/api", response_model=None)
 async def handle_request(req: AnkiConnectRequest, request: Request) -> JsonValue:
     wrapper = get_request_wrapper(request)
     try:
         result = await dispatch(req.action, req.params, wrapper)
-    except ValueError as e:
+    except (ValueError, SyncError) as e:
         # Client-facing errors (unknown action, missing/invalid params) are
         # reported in the response body per the AnkiConnect convention with
-        # HTTP 200 so existing clients keep working. The error envelope is
-        # sent regardless of the requested version, matching upstream.
+        # HTTP 200 so existing clients keep working. SyncError covers
+        # client-caused sync failures too (wrong credentials, unreachable
+        # endpoint, a concurrent sync already in progress) — upstream
+        # AnkiConnect reports those in the same 200 error envelope, and a
+        # 500 would make clients treat a bad password as a server fault.
+        # The error envelope is sent regardless of the requested version,
+        # matching upstream.
         return {"result": None, "error": str(e)}
     # Any other exception (corrupted collection, Anki backend crash, etc.) is
     # a server error and propagates as HTTP 500 via the handler below.

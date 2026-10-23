@@ -2,68 +2,143 @@
 
 import base64
 import time
+from typing import cast
 
 import pytest
 from anki.cards import CardId
 from pydantic import ValidationError
 
+from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.handlers import (
     API_VERSION,
     handle_add_note,
     handle_add_notes,
     handle_add_tags,
+    handle_answer_cards,
+    handle_api_reflect,
     handle_are_due,
     handle_are_suspended,
+    handle_can_add_note,
     handle_can_add_notes,
     handle_can_add_notes_with_error_detail,
+    handle_card_reviews,
     handle_cards_info,
+    handle_cards_mod_time,
     handle_cards_to_notes,
     handle_change_deck,
+    handle_clear_unused_tags,
     handle_create_deck,
+    handle_deck_name_from_id,
     handle_deck_names,
     handle_deck_names_and_ids,
     handle_delete_decks,
     handle_delete_notes,
+    handle_find_and_replace_in_models,
     handle_find_cards,
     handle_find_notes,
+    handle_forget_cards,
+    handle_get_collection_stats_html,
+    handle_get_deck_stats,
     handle_get_decks,
+    handle_get_ease_factors,
     handle_get_intervals,
+    handle_get_latest_review_id,
     handle_get_media_dir_path,
+    handle_get_media_files_names,
+    handle_get_note_tags,
+    handle_get_num_cards_reviewed_by_day,
+    handle_get_num_cards_reviewed_today,
+    handle_get_reviews_of_cards,
+    handle_insert_reviews,
+    handle_model_field_add,
+    handle_model_field_descriptions,
+    handle_model_field_fonts,
     handle_model_field_names,
+    handle_model_field_remove,
+    handle_model_field_rename,
+    handle_model_field_reposition,
+    handle_model_field_set_description,
+    handle_model_field_set_font,
+    handle_model_field_set_font_size,
     handle_model_fields_on_templates,
+    handle_model_name_from_id,
     handle_model_names,
     handle_model_names_and_ids,
     handle_model_styling,
+    handle_model_template_add,
+    handle_model_template_remove,
+    handle_model_template_rename,
+    handle_model_template_reposition,
     handle_multi,
     handle_notes_info,
+    handle_relearn_cards,
+    handle_reload_collection,
+    handle_remove_empty_notes,
     handle_remove_tags,
+    handle_replace_tags,
+    handle_replace_tags_in_all_notes,
+    handle_request_permission,
     handle_retrieve_media_file,
+    handle_set_ease_factors,
+    handle_set_specific_value_of_card,
     handle_suspend,
+    handle_suspended,
     handle_sync_status,
     handle_unsuspend,
     handle_update_note_fields,
+    handle_update_note_tags,
     handle_version,
 )
 from anki_connect_server.types import (
     AddNoteParams,
     AddNotesParams,
     AddTagsParams,
+    AnswerCardsParams,
+    ApiReflectParams,
+    CardAnswer,
+    CardReviewsParams,
     CardsIdsParams,
     ChangeDeckParams,
     CreateDeckParams,
     CredentialsParams,
+    DeckIdParams,
+    DeckNameParams,
     DeleteDecksParams,
     EmptyParams,
     FilenameParams,
+    FindAndReplaceInModelsParams,
     FindCardsParams,
     FindNotesParams,
+    GetCollectionStatsHTMLParams,
+    GetDeckStatsParams,
     GetIntervalsParams,
+    GetMediaFilesNamesParams,
+    GetNoteTagsParams,
+    InsertReviewsParams,
+    ModelFieldAddParams,
+    ModelFieldRemoveParams,
+    ModelFieldRenameParams,
+    ModelFieldRepositionParams,
+    ModelFieldSetDescriptionParams,
+    ModelFieldSetFontParams,
+    ModelFieldSetFontSizeParams,
+    ModelIdParams,
     ModelNameParams,
+    ModelTemplateAddParams,
+    ModelTemplateRemoveParams,
+    ModelTemplateRenameParams,
+    ModelTemplateRepositionParams,
     MultiParams,
     NoteFieldUpdate,
     NoteInput,
     NotesIdsParams,
+    ReplaceTagsInAllNotesParams,
+    ReplaceTagsParams,
+    SetEaseFactorsParams,
+    SetSpecificValueOfCardParams,
+    SuspendedParams,
     UpdateNoteFieldsParams,
+    UpdateNoteTagsParams,
 )
 
 
@@ -77,6 +152,19 @@ def _note(
     }
 
 
+def _test_model(wrapper: AnkiWrapper, name: str = "M5Model") -> str:
+    """Create a dedicated model so field/template mutations leave Basic intact.
+
+    Each test runs against a fresh collection, so a fixed name is safe.
+    """
+    wrapper.create_model(
+        name,
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+    )
+    return name
+
+
 class TestMiscHandlers:
     """Test miscellaneous handlers."""
 
@@ -85,6 +173,55 @@ class TestMiscHandlers:
         """Test version handler."""
         result = await handle_version(anki_wrapper, EmptyParams())
         assert result == API_VERSION
+
+    @pytest.mark.asyncio
+    async def test_handle_api_reflect(self, anki_wrapper):
+        """apiReflect reports the registered actions for the "actions" scope.
+
+        With actions=None, every registered action is returned (sanity that
+        all six milestones registered their handlers); an explicit actions
+        list is filtered to the registered ones; other scopes are ignored.
+        """
+        # (a) Full registry reflection.
+        result = await handle_api_reflect(anki_wrapper, ApiReflectParams(scopes=["actions"]))
+        assert result["scopes"] == ["actions"]
+        actions = result["actions"]
+        assert isinstance(actions, list)
+        assert "version" in actions
+        assert "answerCards" in actions
+        assert "modelTemplateAdd" in actions
+
+        # (b) Explicit action list filtered to the registered ones.
+        result = await handle_api_reflect(
+            anki_wrapper,
+            ApiReflectParams(scopes=["actions"], actions=["version", "deckNames", "notAnAction"]),
+        )
+        assert result["actions"] == ["version", "deckNames"]
+
+        # (c) Empty scopes: nothing is reflected.
+        result = await handle_api_reflect(anki_wrapper, ApiReflectParams(scopes=[]))
+        assert result == {"scopes": []}
+
+        # (d) Unknown scopes are ignored.
+        result = await handle_api_reflect(anki_wrapper, ApiReflectParams(scopes=["other"]))
+        assert result == {"scopes": []}
+
+    @pytest.mark.asyncio
+    async def test_handle_reload_collection(self, anki_wrapper):
+        """reloadCollection is a documented no-op; the collection stays usable."""
+        result = await handle_reload_collection(anki_wrapper, EmptyParams())
+        assert result is None
+
+        # The collection remains usable after the call.
+        note_id = anki_wrapper.add_note(_note(front="AfterReload"))
+        assert note_id is not None
+        assert note_id in anki_wrapper.find_notes("AfterReload")
+
+    @pytest.mark.asyncio
+    async def test_handle_request_permission(self, anki_wrapper):
+        """requestPermission always returns the granted shape (headless)."""
+        result = await handle_request_permission(anki_wrapper, EmptyParams())
+        assert result == {"permission": "granted", "requireApikey": False, "version": 6}
 
     @pytest.mark.asyncio
     async def test_handle_deck_names(self, anki_wrapper):
@@ -125,6 +262,19 @@ class TestMiscHandlers:
         assert "ToDelete" not in anki_wrapper.deck_names()
 
     @pytest.mark.asyncio
+    async def test_handle_deck_name_from_id(self, anki_wrapper):
+        """Test deckNameFromId handler."""
+        deck_id = int(anki_wrapper.col.decks.id("Default"))
+        result = await handle_deck_name_from_id(anki_wrapper, DeckIdParams(deckId=deck_id))
+        assert result == "Default"
+
+    @pytest.mark.asyncio
+    async def test_handle_deck_name_from_id_missing_deck_raises(self, anki_wrapper):
+        """deckNameFromId for a nonexistent deck id raises a client-facing error."""
+        with pytest.raises(ValueError, match="deck was not found"):
+            await handle_deck_name_from_id(anki_wrapper, DeckIdParams(deckId=999999999))
+
+    @pytest.mark.asyncio
     async def test_handle_change_deck(self, anki_wrapper):
         """Test changeDeck handler."""
         anki_wrapper.create_deck("Target")
@@ -147,6 +297,19 @@ class TestModelHandlers:
         """Test modelNamesAndIds handler."""
         result = await handle_model_names_and_ids(anki_wrapper, EmptyParams())
         assert "Basic" in result
+
+    @pytest.mark.asyncio
+    async def test_handle_model_name_from_id(self, anki_wrapper):
+        """Test modelNameFromId handler."""
+        model_id = anki_wrapper.model_names_and_ids()["Basic"]
+        result = await handle_model_name_from_id(anki_wrapper, ModelIdParams(modelId=model_id))
+        assert result == "Basic"
+
+    @pytest.mark.asyncio
+    async def test_handle_model_name_from_id_missing_model_raises(self, anki_wrapper):
+        """modelNameFromId for a nonexistent model id raises a client-facing error."""
+        with pytest.raises(ValueError, match="model was not found"):
+            await handle_model_name_from_id(anki_wrapper, ModelIdParams(modelId=999999999))
 
     @pytest.mark.asyncio
     async def test_handle_model_field_names(self, anki_wrapper):
@@ -190,6 +353,370 @@ class TestModelHandlers:
             anki_wrapper, ModelNameParams(modelName="NoSuchModel")
         )
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_add(self, anki_wrapper):
+        """modelFieldAdd adds a field; an index repositions even existing fields."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_add(
+            anki_wrapper, ModelFieldAddParams(modelName=name, fieldName="Extra")
+        )
+        assert anki_wrapper.model_field_names(name) == ["Front", "Back", "Extra"]
+
+        # Adding an existing field with an index repositions it instead.
+        await handle_model_field_add(
+            anki_wrapper, ModelFieldAddParams(modelName=name, fieldName="Extra", index=0)
+        )
+        assert anki_wrapper.model_field_names(name) == ["Extra", "Front", "Back"]
+
+        # Adding an existing field without an index is a no-op.
+        await handle_model_field_add(
+            anki_wrapper, ModelFieldAddParams(modelName=name, fieldName="Extra")
+        )
+        assert anki_wrapper.model_field_names(name) == ["Extra", "Front", "Back"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_remove(self, anki_wrapper):
+        """modelFieldRemove removes a field; a missing field raises."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_remove(
+            anki_wrapper, ModelFieldRemoveParams(modelName=name, fieldName="Back")
+        )
+        assert anki_wrapper.model_field_names(name) == ["Front"]
+        with pytest.raises(ValueError, match="field was not found in"):
+            await handle_model_field_remove(
+                anki_wrapper, ModelFieldRemoveParams(modelName=name, fieldName="Back")
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_rename(self, anki_wrapper):
+        """modelFieldRename renames a field."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_rename(
+            anki_wrapper,
+            ModelFieldRenameParams(modelName=name, oldFieldName="Back", newFieldName="Reverse"),
+        )
+        fields = anki_wrapper.model_field_names(name)
+        assert "Reverse" in fields
+        assert "Back" not in fields
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_reposition(self, anki_wrapper):
+        """modelFieldReposition moves a field to the requested index."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_reposition(
+            anki_wrapper, ModelFieldRepositionParams(modelName=name, fieldName="Back", index=0)
+        )
+        assert anki_wrapper.model_field_names(name) == ["Back", "Front"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_set_font_and_size(self, anki_wrapper):
+        """modelFieldSetFont/SetFontSize changes are visible via modelFieldFonts."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_set_font(
+            anki_wrapper, ModelFieldSetFontParams(modelName=name, fieldName="Front", font="Courier")
+        )
+        await handle_model_field_set_font_size(
+            anki_wrapper,
+            ModelFieldSetFontSizeParams(modelName=name, fieldName="Front", fontSize=42),
+        )
+        fonts = await handle_model_field_fonts(anki_wrapper, ModelNameParams(modelName=name))
+        assert fonts["Front"] == {"font": "Courier", "size": 42}
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_set_description(self, anki_wrapper):
+        """modelFieldSetDescription returns True and persists the description."""
+        name = _test_model(anki_wrapper)
+        result = await handle_model_field_set_description(
+            anki_wrapper,
+            ModelFieldSetDescriptionParams(
+                modelName=name, fieldName="Front", description="The front"
+            ),
+        )
+        assert result is True
+        descriptions = await handle_model_field_descriptions(
+            anki_wrapper, ModelNameParams(modelName=name)
+        )
+        assert descriptions[0] == "The front"
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_descriptions(self, anki_wrapper):
+        """modelFieldDescriptions returns descriptions in field order."""
+        name = _test_model(anki_wrapper)
+        await handle_model_field_set_description(
+            anki_wrapper,
+            ModelFieldSetDescriptionParams(modelName=name, fieldName="Front", description="First"),
+        )
+        await handle_model_field_set_description(
+            anki_wrapper,
+            ModelFieldSetDescriptionParams(modelName=name, fieldName="Back", description="Second"),
+        )
+        result = await handle_model_field_descriptions(
+            anki_wrapper, ModelNameParams(modelName=name)
+        )
+        assert result == ["First", "Second"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_field_fonts(self, anki_wrapper):
+        """modelFieldFonts is keyed by field name with font/size values."""
+        name = _test_model(anki_wrapper)
+        result = await handle_model_field_fonts(anki_wrapper, ModelNameParams(modelName=name))
+        assert set(result) == {"Front", "Back"}
+        for entry in result.values():
+            assert set(entry) == {"font", "size"}
+            assert isinstance(entry["font"], str)
+            assert isinstance(entry["size"], int)
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_add(self, anki_wrapper):
+        """modelTemplateAdd adds a template; the same Name updates it in place.
+
+        The in-place update persists: upstream returns without saving in that
+        path, silently losing the change, which this server fixes.
+        """
+        name = _test_model(anki_wrapper)
+        params = ModelTemplateAddParams(
+            modelName=name,
+            template={"Name": "Card 2", "Front": "{{Front}} 2", "Back": "{{Back}} 2"},
+        )
+        await handle_model_template_add(anki_wrapper, params)
+        templates = anki_wrapper.model_templates(name)
+        assert len(templates) == 2
+        assert templates["Card 2"] == {"Front": "{{Front}} 2", "Back": "{{Back}} 2"}
+
+        update = ModelTemplateAddParams(
+            modelName=name,
+            template={"Name": "Card 2", "Front": "New {{Front}}", "Back": "New Back"},
+        )
+        await handle_model_template_add(anki_wrapper, update)
+        templates = anki_wrapper.model_templates(name)
+        assert len(templates) == 2
+        assert templates["Card 2"] == {"Front": "New {{Front}}", "Back": "New Back"}
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_add_invalid_front_raises(self, anki_wrapper):
+        """modelTemplateAdd with a fieldless front raises a client-facing error.
+
+        anki 26.8's update_dict rejects a front with no field replacement; the
+        wrapper re-raises it as ValueError so the API layer reports it in the
+        AnkiConnect error envelope instead of a 500.
+        """
+        name = _test_model(anki_wrapper)
+        with pytest.raises(ValueError, match="field replacement"):
+            await handle_model_template_add(
+                anki_wrapper,
+                ModelTemplateAddParams(
+                    modelName=name,
+                    template={"Name": "Broken", "Front": "no fields here", "Back": "{{Front}}"},
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_remove(self, anki_wrapper):
+        """modelTemplateRemove removes a template; a missing one raises."""
+        name = _test_model(anki_wrapper)
+        await handle_model_template_add(
+            anki_wrapper,
+            ModelTemplateAddParams(
+                modelName=name,
+                template={"Name": "Card 2", "Front": "{{Front}} 2", "Back": "{{Back}}"},
+            ),
+        )
+        await handle_model_template_remove(
+            anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 2")
+        )
+        assert list(anki_wrapper.model_templates(name)) == ["Card 1"]
+        with pytest.raises(ValueError, match="template was not found in"):
+            await handle_model_template_remove(
+                anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 2")
+            )
+        # Removing the last remaining template is refused as a *client* error
+        # (ValueError -> HTTP 200 error envelope), not an unhandled anki
+        # Exception -> HTTP 500 (E2E issue P1-2, suite_5 MD-21).
+        with pytest.raises(ValueError, match="must have 1 template"):
+            await handle_model_template_remove(
+                anki_wrapper, ModelTemplateRemoveParams(modelName=name, templateName="Card 1")
+            )
+        assert list(anki_wrapper.model_templates(name)) == ["Card 1"]
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_rename(self, anki_wrapper):
+        """modelTemplateRename renames a template."""
+        name = _test_model(anki_wrapper)
+        await handle_model_template_rename(
+            anki_wrapper,
+            ModelTemplateRenameParams(
+                modelName=name, oldTemplateName="Card 1", newTemplateName="Renamed"
+            ),
+        )
+        templates = anki_wrapper.model_templates(name)
+        assert "Renamed" in templates
+        assert "Card 1" not in templates
+
+    @pytest.mark.asyncio
+    async def test_handle_model_template_reposition(self, anki_wrapper):
+        """modelTemplateReposition moves a template to the requested index."""
+        name = _test_model(anki_wrapper)
+        await handle_model_template_add(
+            anki_wrapper,
+            ModelTemplateAddParams(
+                modelName=name,
+                template={"Name": "Card 2", "Front": "{{Front}} 2", "Back": "{{Back}}"},
+            ),
+        )
+        await handle_model_template_reposition(
+            anki_wrapper,
+            ModelTemplateRepositionParams(modelName=name, templateName="Card 2", index=0),
+        )
+        assert list(anki_wrapper.model_templates(name)) == ["Card 2", "Card 1"]
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models(self, anki_wrapper):
+        """findAndReplaceInModels replaces template text and counts the model."""
+        anki_wrapper.create_model(
+            "M5Replace",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+        )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Replace", findText="MARKER", replaceText="CHANGED"
+            ),
+        )
+        assert result == 1
+        templates = anki_wrapper.model_templates("M5Replace")
+        assert templates["Card 1"]["Front"] == "CHANGED {{Front}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_all_models(self, anki_wrapper):
+        """An empty modelName counts every model containing the text."""
+        for model_name in ("M5AllA", "M5AllB"):
+            anki_wrapper.create_model(
+                model_name,
+                ["Front", "Back"],
+                [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+            )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(modelName="", findText="MARKER", replaceText="CHANGED"),
+        )
+        assert result == 2
+        assert anki_wrapper.model_templates("M5AllA")["Card 1"]["Front"] == "CHANGED {{Front}}"
+        assert anki_wrapper.model_templates("M5AllB")["Card 1"]["Front"] == "CHANGED {{Front}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_flags(self, anki_wrapper):
+        """css=False skips the CSS while the front template is still replaced."""
+        anki_wrapper.create_model(
+            "M5Flags",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+            css=".card { color: MARKER; }",
+        )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Flags", findText="MARKER", replaceText="CHANGED", css=False
+            ),
+        )
+        assert result == 1
+        assert "MARKER" in cast(str, anki_wrapper.model_styling("M5Flags")["css"])
+        templates = anki_wrapper.model_templates("M5Flags")
+        assert templates["Card 1"]["Front"] == "CHANGED {{Front}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_css_and_back(self, anki_wrapper):
+        """findAndReplaceInModels replaces CSS and Back (afmt) text, not just Front.
+
+        Distinct markers are used so each replacement provably came from its
+        own branch; each call still counts the model exactly once.
+        """
+        anki_wrapper.create_model(
+            "M5CssBack",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "{{Front}}", "Back": "AFMTMARK {{Back}}"}],
+            css=".card { color: CSSMARK; }",
+        )
+        # The CSS marker is replaced via the css branch.
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5CssBack", findText="CSSMARK", replaceText="CHANGED"
+            ),
+        )
+        assert result == 1
+        css = cast(str, anki_wrapper.model_styling("M5CssBack")["css"])
+        assert "CSSMARK" not in css
+        assert "CHANGED" in css
+
+        # A different marker in the template's Back (afmt) is replaced too.
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5CssBack", findText="AFMTMARK", replaceText="CHANGED"
+            ),
+        )
+        assert result == 1
+        templates = anki_wrapper.model_templates("M5CssBack")
+        assert templates["Card 1"]["Back"] == "CHANGED {{Back}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_flag_gating(self, anki_wrapper):
+        """front/back=False gate the template branches; css=False gates the CSS branch.
+
+        With the template flags off, only the CSS branch fires (count 1) and
+        the afmt keeps its marker; with back=False, an afmt-only marker is
+        left untouched (count 0).
+        """
+        anki_wrapper.create_model(
+            "M5Gate",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "{{Front}}", "Back": "AFMTMARK {{Back}}"}],
+            css=".card { color: CSSMARK; }",
+        )
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Gate",
+                findText="CSSMARK",
+                replaceText="CHANGED",
+                front=False,
+                back=False,
+            ),
+        )
+        assert result == 1
+        assert "CSSMARK" not in cast(str, anki_wrapper.model_styling("M5Gate")["css"])
+        assert anki_wrapper.model_templates("M5Gate")["Card 1"]["Back"] == "AFMTMARK {{Back}}"
+
+        # back=False gates the afmt branch: no model is counted as updated.
+        result = await handle_find_and_replace_in_models(
+            anki_wrapper,
+            FindAndReplaceInModelsParams(
+                modelName="M5Gate", findText="AFMTMARK", replaceText="CHANGED", back=False
+            ),
+        )
+        assert result == 0
+        assert anki_wrapper.model_templates("M5Gate")["Card 1"]["Back"] == "AFMTMARK {{Back}}"
+
+    @pytest.mark.asyncio
+    async def test_handle_find_and_replace_in_models_missing_model_raises(self, anki_wrapper):
+        """findAndReplaceInModels raises for a missing named model."""
+        with pytest.raises(ValueError, match="model was not found"):
+            await handle_find_and_replace_in_models(
+                anki_wrapper,
+                FindAndReplaceInModelsParams(
+                    modelName="NoSuchModel", findText="x", replaceText="y"
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_model_actions_missing_model_raises(self, anki_wrapper):
+        """A representative model action raises upstream's missing-model error."""
+        with pytest.raises(ValueError, match="model was not found: NoSuchModel"):
+            await handle_model_field_add(
+                anki_wrapper, ModelFieldAddParams(modelName="NoSuchModel", fieldName="X")
+            )
 
 
 class TestNoteHandlers:
@@ -307,6 +834,18 @@ class TestNoteHandlers:
         )
         assert result == [True]
         assert anki_wrapper.find_notes("NotPersisted") == []
+
+    @pytest.mark.asyncio
+    async def test_handle_can_add_note(self, anki_wrapper):
+        """Test canAddNote handler."""
+        result = await handle_can_add_note(
+            anki_wrapper, AddNoteParams(note=_note(front="CanAddMe"))
+        )
+        assert result is True
+
+        bad_deck_note = _note(deck="NonExistentDeck", front="Nope")
+        result_bad = await handle_can_add_note(anki_wrapper, AddNoteParams(note=bad_deck_note))
+        assert result_bad is False
 
     @pytest.mark.asyncio
     async def test_handle_can_add_notes_with_error_detail_success(self, anki_wrapper):
@@ -550,6 +1089,28 @@ class TestNoteHandlers:
         await handle_delete_notes(anki_wrapper, NotesIdsParams(notes=[note_id]))
 
     @pytest.mark.asyncio
+    async def test_handle_remove_empty_notes(self, anki_wrapper):
+        """Test removeEmptyNotes handler.
+
+        Upstream parity: despite the name, the action removes note types with
+        zero notes. The unused note type is gone afterwards while Basic, which
+        still has a note, remains.
+        """
+        anki_wrapper.add_note(_note(front="KeepsBasic"))
+        anki_wrapper.create_model(
+            "UnusedModel",
+            ["Front", "Back"],
+            [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+        )
+        assert "UnusedModel" in anki_wrapper.model_names()
+
+        result = await handle_remove_empty_notes(anki_wrapper, EmptyParams())
+
+        assert result is None
+        assert "UnusedModel" not in anki_wrapper.model_names()
+        assert "Basic" in anki_wrapper.model_names()
+
+    @pytest.mark.asyncio
     async def test_handle_add_tags(self, anki_wrapper):
         """Test addTags handler: tags land on the note."""
         note_id = anki_wrapper.add_note(_note())
@@ -584,6 +1145,130 @@ class TestNoteHandlers:
         await handle_add_tags(anki_wrapper, AddTagsParams(notes=note_ids, tags="batch"))
         for note_id in note_ids:
             assert anki_wrapper.col.get_note(note_id).tags == ["batch"]
+
+    @pytest.mark.asyncio
+    async def test_handle_replace_tags(self, anki_wrapper):
+        """replaceTags swaps the tag on the listed notes that have it."""
+        note_a = anki_wrapper.add_note(_note(front="ReplaceA"))
+        note_b = anki_wrapper.add_note(_note(front="ReplaceB"))
+        note_c = anki_wrapper.add_note(_note(front="ReplaceC"))
+        assert note_a is not None
+        assert note_b is not None
+        assert note_c is not None
+        anki_wrapper.add_tags([note_a, note_b], "old")
+        anki_wrapper.add_tags([note_c], "other")
+
+        result = await handle_replace_tags(
+            anki_wrapper,
+            ReplaceTagsParams(notes=[note_a, note_b], tag_to_replace="old", replace_with_tag="new"),
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_a) == ["new"]
+        assert anki_wrapper.get_note_tags(note_b) == ["new"]
+        assert anki_wrapper.get_note_tags(note_c) == ["other"]
+
+    @pytest.mark.asyncio
+    async def test_handle_replace_tags_skips_missing_notes(self, anki_wrapper):
+        """replaceTags silently skips missing note ids (upstream parity)."""
+        note_id = anki_wrapper.add_note(_note(front="ReplaceMissing"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "old")
+
+        result = await handle_replace_tags(
+            anki_wrapper,
+            ReplaceTagsParams(
+                notes=[999999999, note_id], tag_to_replace="old", replace_with_tag="new"
+            ),
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_id) == ["new"]
+
+    @pytest.mark.asyncio
+    async def test_handle_replace_tags_in_all_notes(self, anki_wrapper):
+        """replaceTagsInAllNotes swaps the tag across every note in the collection."""
+        note_a = anki_wrapper.add_note(_note(front="AllNotesA"))
+        note_b = anki_wrapper.add_note(_note(front="AllNotesB"))
+        assert note_a is not None
+        assert note_b is not None
+        anki_wrapper.add_tags([note_a], "alpha")
+        anki_wrapper.add_tags([note_b], "beta")
+
+        result = await handle_replace_tags_in_all_notes(
+            anki_wrapper,
+            ReplaceTagsInAllNotesParams(tag_to_replace="alpha", replace_with_tag="gamma"),
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_a) == ["gamma"]
+        assert anki_wrapper.get_note_tags(note_b) == ["beta"]
+
+    @pytest.mark.asyncio
+    async def test_handle_clear_unused_tags(self, anki_wrapper):
+        """clearUnusedTags removes tags no longer used by any note."""
+        note_id = anki_wrapper.add_note(_note(front="UnusedTagNote"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "single-use")
+        assert "single-use" in anki_wrapper.get_tags()
+
+        anki_wrapper.delete_notes([note_id])
+        # The tag lingers in the tags cache until unused tags are cleared.
+        assert "single-use" in anki_wrapper.get_tags()
+
+        result = await handle_clear_unused_tags(anki_wrapper, EmptyParams())
+
+        assert result is None
+        assert "single-use" not in anki_wrapper.get_tags()
+
+    @pytest.mark.asyncio
+    async def test_handle_get_note_tags(self, anki_wrapper):
+        """getNoteTags returns the note's tags."""
+        note_id = anki_wrapper.add_note(_note(front="TaggedNote"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "foo bar")
+
+        result = await handle_get_note_tags(anki_wrapper, GetNoteTagsParams(note=note_id))
+
+        assert sorted(result) == ["bar", "foo"]
+
+    @pytest.mark.asyncio
+    async def test_handle_get_note_tags_missing_note_raises(self, anki_wrapper):
+        """getNoteTags for a nonexistent note id raises a client-facing error."""
+        with pytest.raises(ValueError, match="Note was not found"):
+            await handle_get_note_tags(anki_wrapper, GetNoteTagsParams(note=999999999))
+
+    @pytest.mark.asyncio
+    async def test_handle_update_note_tags(self, anki_wrapper):
+        """updateNoteTags replaces all tags of a note (list or string form)."""
+        note_id = anki_wrapper.add_note(_note(front="UpdateTagsNote"))
+        assert note_id is not None
+        anki_wrapper.add_tags([note_id], "a b")
+
+        result = await handle_update_note_tags(
+            anki_wrapper, UpdateNoteTagsParams(note=note_id, tags=["x", "y"])
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_id) == ["x", "y"]
+
+        # Upstream accepts a plain string as a single tag.
+        result = await handle_update_note_tags(
+            anki_wrapper, UpdateNoteTagsParams(note=note_id, tags="z")
+        )
+
+        assert result is None
+        assert anki_wrapper.get_note_tags(note_id) == ["z"]
+
+    @pytest.mark.asyncio
+    async def test_handle_update_note_tags_missing_note_raises(self, anki_wrapper):
+        """updateNoteTags for a nonexistent note id raises a client-facing error
+        with the same clean wording as getNoteTags (E2E P3-2: it previously
+        embedded anki's raw NotFoundError text)."""
+        with pytest.raises(ValueError, match="Note was not found: 999999999"):
+            await handle_update_note_tags(
+                anki_wrapper, UpdateNoteTagsParams(note=999999999, tags=["x"])
+            )
 
 
 class TestCardHandlers:
@@ -620,6 +1305,56 @@ class TestCardHandlers:
         card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
         result = await handle_cards_info(anki_wrapper, CardsIdsParams(cards=card_ids))
         assert len(result) > 0
+        # Upstream parity (E2E P3-1): the full card shape is exposed, with
+        # `factor` as the ease factor's wire name and `ease` kept as a
+        # legacy alias of the same value.
+        entry = result[0]
+        assert set(entry) == {
+            "cardId",
+            "fields",
+            "fieldOrder",
+            "question",
+            "answer",
+            "modelName",
+            "ord",
+            "deckName",
+            "css",
+            "factor",
+            "ease",
+            "interval",
+            "note",
+            "type",
+            "queue",
+            "due",
+            "reps",
+            "lapses",
+            "left",
+            "mod",
+        }
+        assert entry["note"] == note_id
+        assert entry["factor"] == entry["ease"]
+        assert isinstance(entry["factor"], int)
+        assert isinstance(entry["mod"], int)
+        assert entry["deckName"] == "Default"
+        assert entry["modelName"] == "Basic"
+
+    @pytest.mark.asyncio
+    async def test_handle_cards_mod_time(self, anki_wrapper):
+        """Test cardsModTime handler."""
+        note_id = anki_wrapper.add_note(_note(front="ModTime"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_cards_mod_time(anki_wrapper, CardsIdsParams(cards=card_ids))
+        assert len(result) == 1
+        assert result[0]["cardId"] == card_ids[0]
+        assert isinstance(result[0]["mod"], int)
+        assert result[0]["mod"] == anki_wrapper.col.get_card(CardId(card_ids[0])).mod
+
+    @pytest.mark.asyncio
+    async def test_handle_cards_mod_time_missing_card(self, anki_wrapper):
+        """cardsModTime yields an empty dict for a missing card id (upstream
+        parity, so the input and return lists correspond)."""
+        result = await handle_cards_mod_time(anki_wrapper, CardsIdsParams(cards=[999999999]))
+        assert result == [{}]
 
     @pytest.mark.asyncio
     async def test_handle_suspend(self, anki_wrapper):
@@ -660,6 +1395,24 @@ class TestCardHandlers:
         anki_wrapper.suspend(card_ids)
         result = await handle_unsuspend(anki_wrapper, CardsIdsParams(cards=card_ids))
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_handle_suspended(self, anki_wrapper):
+        """Test suspended handler."""
+        note_id = anki_wrapper.add_note(_note(front="AmISuspended"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_suspended(anki_wrapper, SuspendedParams(card=card_ids[0]))
+        assert result is False
+        anki_wrapper.suspend(card_ids)
+        result_suspended = await handle_suspended(anki_wrapper, SuspendedParams(card=card_ids[0]))
+        assert result_suspended is True
+
+    @pytest.mark.asyncio
+    async def test_handle_suspended_missing_card_raises(self, anki_wrapper):
+        """suspended for a nonexistent card id raises a client-facing error
+        (unlike areSuspended, which returns False)."""
+        with pytest.raises(ValueError, match="Card was not found"):
+            await handle_suspended(anki_wrapper, SuspendedParams(card=999999999))
 
     @pytest.mark.asyncio
     async def test_handle_are_suspended(self, anki_wrapper):
@@ -736,6 +1489,425 @@ class TestCardHandlers:
         # or 1). Assert it's present and an int -- the regression check
         # is that the field exists and is sourced from the revlog.
 
+    @pytest.mark.asyncio
+    async def test_handle_answer_cards(self, anki_wrapper):
+        """answerCards answers the card, writes a revlog row, and leaves new state."""
+        note_id = anki_wrapper.add_note(_note(front="AnswerMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_answer_cards(
+            anki_wrapper,
+            AnswerCardsParams(answers=[CardAnswer(cardId=card_ids[0], ease=3)]),
+        )
+        assert result == [True]
+        revlog_rows = anki_wrapper.col.db.all("select id from revlog where cid = ?", card_ids[0])
+        assert len(revlog_rows) == 1
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.queue != 0
+        assert card.type != 0
+
+    @pytest.mark.asyncio
+    async def test_handle_answer_cards_missing_card(self, anki_wrapper):
+        """answerCards reports False for a nonexistent card id."""
+        result = await handle_answer_cards(
+            anki_wrapper, AnswerCardsParams(answers=[CardAnswer(cardId=999999999, ease=3)])
+        )
+        assert result == [False]
+
+    @pytest.mark.asyncio
+    async def test_handle_answer_cards_empty_list(self, anki_wrapper):
+        """answerCards with no answers is a no-op returning an empty list."""
+        result = await handle_answer_cards(anki_wrapper, AnswerCardsParams(answers=[]))
+        assert result == []
+
+    def test_answer_cards_invalid_ease_rejected(self):
+        """Ease values outside 1-4 fail validation before anything is applied."""
+        with pytest.raises(ValidationError):
+            AnswerCardsParams.model_validate({"answers": [{"cardId": 1, "ease": 5}]})
+
+    @pytest.mark.asyncio
+    async def test_handle_forget_cards(self, anki_wrapper):
+        """forgetCards hard-resets a scheduled card back to new."""
+        note_id = anki_wrapper.add_note(_note(front="ForgetMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        # Move the card out of the new state by answering it.
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type != 0 or card.queue != 0
+        result = await handle_forget_cards(anki_wrapper, CardsIdsParams(cards=card_ids))
+        assert result is None
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type == 0
+        assert card.queue == 0
+        assert card.ivl == 0
+        assert card.factor == 0
+
+    @pytest.mark.asyncio
+    async def test_handle_relearn_cards(self, anki_wrapper):
+        """relearnCards moves a review card into the relearning state."""
+        note_id = anki_wrapper.add_note(_note(front="RelearnMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        # Graduate the card to the review state first (Easy skips learning steps).
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 4}]) == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type == 2  # review
+        result = await handle_relearn_cards(anki_wrapper, CardsIdsParams(cards=card_ids))
+        assert result is None
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.type == 3  # CARD_TYPE_RELEARNING
+        assert card.queue == 1  # learning queue
+
+    @pytest.mark.asyncio
+    async def test_handle_set_ease_factors(self, anki_wrapper):
+        """setEaseFactors sets the factor (10x the ease percentage)."""
+        note_id = anki_wrapper.add_note(_note(front="EaseMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_ease_factors(
+            anki_wrapper, SetEaseFactorsParams(cards=card_ids, easeFactors=[3100])
+        )
+        assert result == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.factor == 3100
+
+    @pytest.mark.asyncio
+    async def test_handle_set_ease_factors_missing_card(self, anki_wrapper):
+        """setEaseFactors reports False for a nonexistent card id."""
+        result = await handle_set_ease_factors(
+            anki_wrapper, SetEaseFactorsParams(cards=[999999999], easeFactors=[2500])
+        )
+        assert result == [False]
+
+    @pytest.mark.asyncio
+    async def test_handle_set_ease_factors_length_mismatch(self, anki_wrapper):
+        """Mismatched cards/easeFactors lengths raise a client-facing error."""
+        with pytest.raises(ValueError, match="same length"):
+            await handle_set_ease_factors(
+                anki_wrapper, SetEaseFactorsParams(cards=[1, 2], easeFactors=[2500])
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_get_ease_factors(self, anki_wrapper):
+        """Test getEaseFactors handler."""
+        note_id = anki_wrapper.add_note(_note(front="EaseMe"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_get_ease_factors(anki_wrapper, CardsIdsParams(cards=card_ids))
+        assert len(result) == 1
+        assert isinstance(result[0], int)
+        assert result[0] == anki_wrapper.col.get_card(CardId(card_ids[0])).factor
+
+    @pytest.mark.asyncio
+    async def test_handle_get_ease_factors_missing_card(self, anki_wrapper):
+        """getEaseFactors yields None for a missing card id (upstream parity)."""
+        result = await handle_get_ease_factors(anki_wrapper, CardsIdsParams(cards=[999999999]))
+        assert result == [None]
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card(self, anki_wrapper):
+        """setSpecificValueOfCard applies allowed keys like 'due'."""
+        note_id = anki_wrapper.add_note(_note(front="SpecificValue"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["due"], newValues=[42]),
+        )
+        assert result == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.due == 42
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_missing_card(self, anki_wrapper):
+        """A nonexistent card id yields upstream's nested failure shape."""
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=999999999, keys=["due"], newValues=[5]),
+        )
+        # Upstream returns [[False, error]] -- one outer element holding a
+        # two-element [False, message] list.
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], list)
+        assert len(result[0]) == 2
+        assert result[0][0] is False
+        assert isinstance(result[0][1], str)
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_blocked_key(self, anki_wrapper):
+        """Blocked keys are refused when warning_check is False."""
+        note_id = anki_wrapper.add_note(_note(front="BlockedKey"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["ivl"], newValues=[100]),
+        )
+        assert result is False
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.ivl == 0  # nothing was applied
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_blocked_key_with_warning_check(
+        self, anki_wrapper
+    ):
+        """warning_check=True overrides the blocked-key refusal."""
+        note_id = anki_wrapper.add_note(_note(front="BlockedKeyAllowed"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(
+                card=card_ids[0], keys=["ivl"], newValues=[100], warning_check=True
+            ),
+        )
+        assert result == [True]
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.ivl == 100
+
+    @pytest.mark.asyncio
+    async def test_handle_set_specific_value_of_card_length_mismatch(self, anki_wrapper):
+        """Mismatched keys/newValues lengths return False and nothing is applied."""
+        note_id = anki_wrapper.add_note(_note(front="LengthMismatch"))
+        card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+        await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["due"], newValues=[42]),
+        )
+        result = await handle_set_specific_value_of_card(
+            anki_wrapper,
+            SetSpecificValueOfCardParams(card=card_ids[0], keys=["due"], newValues=[1, 2]),
+        )
+        assert result is False
+        card = anki_wrapper.col.get_card(CardId(card_ids[0]))
+        assert card.due == 42  # nothing was applied
+
+
+class TestStatsHandlers:
+    """Test stats/revlog handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handle_card_reviews(self, anki_wrapper):
+        """cardReviews returns rows of 9 elements since the start id."""
+        anki_wrapper.add_note(_note(front="CardReviews"))
+        card_ids = anki_wrapper.find_cards("CardReviews")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_card_reviews(
+            anki_wrapper, CardReviewsParams(deck="Default", startID=0)
+        )
+
+        assert len(result) >= 1
+        row = result[0]
+        assert isinstance(row, list)
+        assert len(row) == 9
+        assert isinstance(row[0], int)  # id
+        assert isinstance(row[1], int)  # cid
+        assert row[1] == card_ids[0]
+
+        # A startID larger than any review id filters everything out.
+        late = await handle_card_reviews(
+            anki_wrapper, CardReviewsParams(deck="Default", startID=99999999999999)
+        )
+        assert late == []
+
+    @pytest.mark.asyncio
+    async def test_handle_get_reviews_of_cards(self, anki_wrapper):
+        """getReviewsOfCards returns per-card review dicts without cid."""
+        anki_wrapper.add_note(_note(front="ReviewsOfCards"))
+        card_ids = anki_wrapper.find_cards("ReviewsOfCards")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_reviews_of_cards(anki_wrapper, CardsIdsParams(cards=card_ids))
+
+        assert card_ids[0] in result
+        reviews = result[card_ids[0]]
+        assert len(reviews) >= 1
+        assert set(reviews[0]) == {
+            "id",
+            "usn",
+            "ease",
+            "ivl",
+            "lastIvl",
+            "factor",
+            "time",
+            "type",
+        }
+
+        # A card id with no reviews maps to an empty list.
+        missing = await handle_get_reviews_of_cards(anki_wrapper, CardsIdsParams(cards=[999999999]))
+        assert missing == {999999999: []}
+
+    @pytest.mark.asyncio
+    async def test_handle_get_latest_review_id(self, anki_wrapper):
+        """getLatestReviewID is 0 without reviews and the max revlog id after."""
+        anki_wrapper.create_deck("NoReviewsYet")
+        empty = await handle_get_latest_review_id(anki_wrapper, DeckNameParams(deck="NoReviewsYet"))
+        assert empty == 0
+
+        anki_wrapper.add_note(_note(front="LatestReview"))
+        card_ids = anki_wrapper.find_cards("LatestReview")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_latest_review_id(anki_wrapper, DeckNameParams(deck="Default"))
+
+        max_id = anki_wrapper.col.db.scalar("select max(id) from revlog")
+        assert result == max_id
+        assert result > 0
+
+    @pytest.mark.asyncio
+    async def test_handle_get_latest_review_id_requires_deck(self, anki_wrapper):
+        """deck is required: with a "" default anki's decks.id("") would
+        silently create a deck named "blank" (E2E P3-7)."""
+
+        with pytest.raises(ValidationError, match="Field required"):
+            await handle_get_latest_review_id(anki_wrapper, DeckNameParams())  # type: ignore[call-arg]
+
+    @pytest.mark.asyncio
+    async def test_handle_get_num_cards_reviewed_today(self, anki_wrapper):
+        """getNumCardsReviewedToday counts reviews made since the day start."""
+        anki_wrapper.add_note(_note(front="ReviewedToday"))
+        card_ids = anki_wrapper.find_cards("ReviewedToday")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_num_cards_reviewed_today(anki_wrapper, EmptyParams())
+
+        assert result >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_num_cards_reviewed_by_day(self, anki_wrapper):
+        """getNumCardsReviewedByDay returns [day, count] rows."""
+        anki_wrapper.add_note(_note(front="ReviewedByDay"))
+        card_ids = anki_wrapper.find_cards("ReviewedByDay")
+        assert anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}]) == [True]
+
+        result = await handle_get_num_cards_reviewed_by_day(anki_wrapper, EmptyParams())
+
+        assert len(result) >= 1
+        row = result[0]
+        assert isinstance(row, list)
+        assert len(row) == 2
+        day, count = row
+        assert isinstance(day, str)
+        assert isinstance(count, int)
+        assert count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_insert_reviews(self, anki_wrapper):
+        """insertReviews inserts raw 9-element rows bound as parameters."""
+        anki_wrapper.add_note(_note(front="InsertReviews"))
+        card_ids = anki_wrapper.find_cards("InsertReviews")
+        cid = card_ids[0]
+
+        await handle_insert_reviews(
+            anki_wrapper,
+            InsertReviewsParams(reviews=[[1234567890123, cid, 0, 3, 0, 0, 2500, 1000, 3]]),
+        )
+
+        reviews = await handle_get_reviews_of_cards(anki_wrapper, CardsIdsParams(cards=[cid]))
+        assert any(review["id"] == 1234567890123 for review in reviews[cid])
+
+        # A malformed row (8 elements) is rejected with a clean error.
+        with pytest.raises(ValueError, match="9 elements"):
+            await handle_insert_reviews(
+                anki_wrapper, InsertReviewsParams(reviews=[[1, 2, 3, 4, 5, 6, 7, 8]])
+            )
+
+    @pytest.mark.asyncio
+    async def test_handle_insert_reviews_empty_list_is_noop(self, anki_wrapper):
+        """insertReviews with an empty list returns None without touching revlog."""
+        db = anki_wrapper.col.db
+        assert db is not None
+        count_before = int(db.scalar("select count() from revlog"))
+
+        result = await handle_insert_reviews(anki_wrapper, InsertReviewsParams(reviews=[]))
+
+        assert result is None
+        assert int(db.scalar("select count() from revlog")) == count_before
+
+    @pytest.mark.asyncio
+    async def test_handle_get_deck_stats(self, anki_wrapper):
+        """getDeckStats returns due counts keyed by deck id."""
+        anki_wrapper.add_note(_note(front="DeckStats"))
+        default_id = anki_wrapper.deck_names_and_ids()["Default"]
+
+        result = await handle_get_deck_stats(anki_wrapper, GetDeckStatsParams(decks=["Default"]))
+
+        assert default_id in result
+        entry = result[default_id]
+        assert set(entry) == {
+            "deck_id",
+            "name",
+            "new_count",
+            "learn_count",
+            "review_count",
+            "total_in_deck",
+            "total_including_children",
+        }
+        new_count = entry["new_count"]
+        assert isinstance(new_count, int)
+        assert new_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_deck_stats_flattens_children(self, anki_wrapper):
+        """getDeckStats aggregates child decks into the parent entry.
+
+        The flattened due tree makes the requested "Parent" node findable and
+        its due counts include cards sitting in "Parent::Child", which is not
+        returned as a separate response key. (total_in_deck counts cards
+        directly in the deck only -- the child's card shows up in the
+        parent's due counts instead.)
+        """
+        anki_wrapper.create_deck("Parent")
+        child_id = anki_wrapper.create_deck("Parent::Child")
+        parent_id = anki_wrapper.deck_names_and_ids()["Parent"]
+        anki_wrapper.add_note(_note(deck="Parent::Child", front="ChildNote"))
+
+        result = await handle_get_deck_stats(anki_wrapper, GetDeckStatsParams(decks=["Parent"]))
+
+        assert set(result) == {parent_id}
+        assert child_id not in result
+        parent_entry = result[parent_id]
+        new_count = parent_entry["new_count"]
+        assert isinstance(new_count, int)
+        assert new_count >= 1
+        # total_in_deck is upstream's direct-cards field (the parent has no
+        # direct cards here); total_including_children is the aggregated total
+        # (E2E P2-6: the due counts aggregate, so clients need the aggregate).
+        assert parent_entry["total_in_deck"] == 0
+        assert isinstance(parent_entry["total_including_children"], int)
+        assert parent_entry["total_including_children"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_get_collection_stats_html(self, anki_wrapper):
+        """getCollectionStatsHTML returns the wrapped HTML report."""
+        result = await handle_get_collection_stats_html(
+            anki_wrapper, GetCollectionStatsHTMLParams()
+        )
+
+        assert isinstance(result, str)
+        assert result
+        assert result.startswith("<center")
+
+
+class TestDbNoneGuards:
+    """Pin the wrapper's defensive col.db-is-None early returns."""
+
+    def test_db_none_guards_return_sentinels(self, anki_wrapper, monkeypatch):
+        """Raw-SQL wrapper methods return their documented sentinels when col.db is None.
+
+        col.db is only None after the collection has been closed, so these
+        guards are defensive; pin each sentinel return value so the guards
+        cannot silently regress into AttributeError/TypeError exceptions.
+        monkeypatch restores the real db afterwards, keeping the collection
+        usable for teardown.
+        """
+        monkeypatch.setattr(anki_wrapper.col, "db", None)
+
+        assert anki_wrapper.replace_tags_in_all_notes("a", "b") is None
+        assert anki_wrapper.forget_cards([1]) is None
+        assert anki_wrapper.relearn_cards([1]) is None
+        assert anki_wrapper.card_reviews("Default", 0) == []
+        assert anki_wrapper.get_reviews_of_cards([1]) == {1: []}
+        assert anki_wrapper.get_latest_review_id("Default") == 0
+        assert anki_wrapper.get_num_cards_reviewed_today() == 0
+        assert anki_wrapper.get_num_cards_reviewed_by_day() == []
+        assert anki_wrapper.insert_reviews([[0] * 9]) is None
+
 
 class TestMediaHandlers:
     """Test media-related handlers."""
@@ -748,12 +1920,51 @@ class TestMediaHandlers:
         assert len(result) > 0
 
     @pytest.mark.asyncio
+    async def test_handle_get_media_files_names(self, anki_wrapper):
+        """Test getMediaFilesNames handler."""
+        payload = base64.b64encode(b"png-bytes").decode()
+        anki_wrapper.store_media_file("x.png", data=payload)
+
+        result = await handle_get_media_files_names(anki_wrapper, GetMediaFilesNamesParams())
+        assert "x.png" in result
+
+        filtered = await handle_get_media_files_names(
+            anki_wrapper, GetMediaFilesNamesParams(pattern="x.*")
+        )
+        assert filtered == ["x.png"]
+
+        no_match = await handle_get_media_files_names(
+            anki_wrapper, GetMediaFilesNamesParams(pattern="zzz*")
+        )
+        assert no_match == []
+
+    @pytest.mark.asyncio
     async def test_handle_retrieve_media_file_not_found(self, anki_wrapper):
         """Test retrieveMediaFile handler returns None for missing file."""
         result = await handle_retrieve_media_file(
             anki_wrapper, FilenameParams(filename="nonexistent.txt")
         )
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_handle_get_media_files_names_rejects_traversal(self, anki_wrapper):
+        """Absolute patterns and .. components are client errors (E2E P2-5).
+
+        Upstream's os.path.join(media_dir, pattern) discards the media-dir
+        base for an absolute pattern, turning the glob into a directory
+        listing of arbitrary host paths — a remote listing primitive on an
+        unauthenticated server, so it is refused instead.
+        """
+        for pattern in ("/etc/*", "/media/../etc/*", "../etc/*", "media/../../etc/*"):
+            with pytest.raises(ValueError, match="relative to the media directory"):
+                await handle_get_media_files_names(
+                    anki_wrapper, GetMediaFilesNamesParams(pattern=pattern)
+                )
+        # Plain relative patterns are unaffected.
+        assert (
+            await handle_get_media_files_names(anki_wrapper, GetMediaFilesNamesParams(pattern="*"))
+            == []
+        )
 
     @pytest.mark.asyncio
     async def test_handle_store_media_file_via_data(self, anki_wrapper):
@@ -884,6 +2095,29 @@ class TestSyncHandlers:
         assert result["status"] == "ok"
         assert result["required"] == 0
 
+    @pytest.mark.asyncio
+    async def test_handle_sync_status_omits_empty_fields(self, anki_wrapper, monkeypatch):
+        """syncStatus surfaces server/status only when the backend provides them.
+
+        anki 26.8's sync status carries only the sync requirement; the
+        always-empty server/status strings are omitted instead of shipped
+        as "" (E2E P3-9)."""
+        from unittest.mock import Mock
+
+        class BareStatus:
+            required = 1
+
+        mock_auth = Mock(hkey="test_key")
+        monkeypatch.setattr(anki_wrapper.col, "sync_login", Mock(return_value=mock_auth))
+        monkeypatch.setattr(anki_wrapper.col, "sync_status", Mock(return_value=BareStatus()))
+
+        result = await handle_sync_status(
+            anki_wrapper,
+            CredentialsParams(username="user@example.com", password="pw"),
+        )
+
+        assert result == {"required": 1}
+
 
 class TestMultiHandler:
     """Test multi action handler."""
@@ -916,8 +2150,32 @@ class TestMultiHandler:
             ),
         )
         assert len(result) == 2
-        assert isinstance(result[0], list)  # deckNames succeeded
-        assert result[1] == {"error": "Unknown action: noSuchAction"}
+        assert isinstance(
+            result[0], list
+        )  # deckNames succeeded (bare value, version defaults to 4)
+        # Upstream format_exception_reply: failures are always
+        # {"result": None, "error": ...} with the same wording as the
+        # top-level dispatch (E2E P2-4 / P3-3).
+        assert result[1] == {"result": None, "error": "Unsupported action: noSuchAction"}
+
+    @pytest.mark.asyncio
+    async def test_handle_multi_per_entry_version_envelopes(self, anki_wrapper):
+        """Success entries follow the entry's own version, like upstream.
+
+        Entries with version >= 5 get {"result": ..., "error": null}; entries
+        without a version (upstream default 4) get the bare value.
+        """
+        result = await handle_multi(
+            anki_wrapper,
+            MultiParams(
+                actions=[
+                    {"action": "version", "version": 6},
+                    {"action": "version"},
+                ]
+            ),
+        )
+        assert result[0] == {"result": 6, "error": None}
+        assert result[1] == 6
 
     @pytest.mark.asyncio
     async def test_handle_multi_sub_action_failure_does_not_abort(self, anki_wrapper):
@@ -932,7 +2190,9 @@ class TestMultiHandler:
             ),
         )
         assert len(result) == 2
-        assert isinstance(result[0], dict) and "error" in result[0]
+        assert isinstance(result[0], dict)
+        assert result[0]["result"] is None
+        assert isinstance(result[0]["error"], str)
         assert isinstance(result[1], list)
 
     @pytest.mark.asyncio
@@ -948,7 +2208,10 @@ class TestMultiHandler:
             ),
         )
         assert len(result) == 2
-        assert "error" in result[0]
+        assert result[0] == {
+            "result": None,
+            "error": "Invalid action: expected object, got str",
+        }
         assert isinstance(result[1], list)
 
     @pytest.mark.asyncio

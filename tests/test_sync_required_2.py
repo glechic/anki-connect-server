@@ -127,16 +127,37 @@ class TestSyncRequirementResolution:
         assert mock_col.full_upload_or_download.call_args[1]["upload"] is False
         mock_col.reopen.assert_called_once_with(after_full_sync=True)
 
-    def test_full_upload_raises_and_preserves_local(self, patched_config):
-        """FULL_UPLOAD raises SyncError by policy; local data is not uploaded."""
+    def test_full_upload_uploads_with_uploaded_outcome(self, patched_config):
+        """FULL_UPLOAD seeds the empty remote and reports an uploaded outcome.
+
+        FULL_UPLOAD is only requested when the remote is empty and the local
+        collection has data (protocol guarantee, see anki's
+        compared_to_remote), so uploading cannot destroy remote data; it is
+        the seeding path for a fresh sync account (E2E issue P1-1, suite_8
+        SY-03/04/05).
+        """
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD, server_media_usn=42)
         with _make_wrapper(mock_col) as wrapper:
-            with pytest.raises(SyncError, match="full upload"):
-                wrapper.sync_to_ankiweb()
+            result = wrapper.sync_to_ankiweb()
 
-        mock_col.full_upload_or_download.assert_not_called()
-        # close_for_full_sync is not called for the upload branch
-        mock_col.close_for_full_sync.assert_not_called()
+        assert isinstance(result, SyncResult)
+        assert result.collection.outcome is CollectionSyncOutcome.UPLOADED
+        assert result.collection.download_reason is None
+        assert result.collection.local_data_replaced is False
+        mock_col.full_upload_or_download.assert_called_once()
+        assert mock_col.full_upload_or_download.call_args[1]["upload"] is True
+        assert mock_col.full_upload_or_download.call_args[1]["server_usn"] == 42
+        # Mirrors _full_download: reattach with reopen(after_full_sync=True)
+        # instead of constructing a new Collection ("Anki already open").
+        mock_col.reopen.assert_called_once_with(after_full_sync=True)
+
+    def test_full_upload_failure_raises_sync_error(self, patched_config):
+        """If the upload fails, a SyncError is raised (not the raw exception)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
+        mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="Full collection upload failed"):
+                wrapper.sync_to_ankiweb()
 
     def test_normal_sync_merges(self, patched_config):
         """NORMAL_SYNC reports a merged outcome and reopens the collection."""
@@ -240,15 +261,80 @@ class TestSyncSafety:
         mock_col.abort_media_sync.assert_called_once()
 
     def test_error_logged_on_failure(self, patched_config, caplog):
-        """Errors during sync are logged with the exception."""
+        """Errors during sync are logged with the exception detail.
+
+        Since P2-3/P3-4, SyncError failures reach clients in the 200 error
+        envelope and log at WARNING (expected client-facing conditions);
+        the underlying error detail must still be in the message."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_DOWNLOAD)
         mock_col.full_upload_or_download = Mock(side_effect=ValueError("Test error"))
         with _make_wrapper(mock_col) as wrapper:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.WARNING):
                 with pytest.raises(SyncError, match="Full collection download failed"):
                     wrapper.sync_to_ankiweb()
 
         assert "Test error" in caplog.text
+
+    def test_auth_failure_names_endpoint(self, patched_config):
+        """Auth failures include the endpoint (E2E suite_8 SY-08: anki's own
+        network error drops the URL from its message)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("error sending request for url ()"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match=r"for http://sync.example:8270/"):
+                wrapper.sync_to_ankiweb(endpoint="http://sync.example:8270/")
+
+    def test_sync_status_auth_failure_is_sync_error(self, patched_config):
+        """syncStatus login failures surface as SyncError (mapped to the 200
+        error envelope), not as raw anki exceptions -> HTTP 500 (E2E P2-3)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("Email or password was incorrect"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="authentication failed"):
+                wrapper.sync_status(endpoint="http://sync.example:8270/")
+
+    def test_sync_media_only_auth_failure_is_sync_error(self, patched_config):
+        """syncMedia login failures surface as SyncError too (E2E P2-3)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("Email or password was incorrect"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="authentication failed"):
+                wrapper.sync_media_only(endpoint="http://sync.example:8270/")
+
+    def test_client_caused_sync_failure_logs_warning_not_exception(self, patched_config, caplog):
+        """Expected client-caused sync failures log at WARNING with no
+        traceback, not as ERROR-looking crashes (E2E P3-4)."""
+        mock_col = Mock()
+        mock_col.sync_login = Mock(side_effect=RuntimeError("Email or password was incorrect"))
+        with _make_wrapper(mock_col) as wrapper:
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(SyncError, match="authentication failed"):
+                    wrapper.sync_to_ankiweb(endpoint="http://sync.example:8270/")
+
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+        assert any(
+            r.levelname == "WARNING" and "AnkiWeb sync failed" in r.message for r in caplog.records
+        )
+        assert all(r.exc_info is None for r in caplog.records)
+
+    def test_missing_credentials_logs_warning_not_exception(self, monkeypatch, caplog):
+        """Missing credentials are a client error: WARNING log, no traceback,
+        and the ValueError reaches the API's 200 envelope (E2E P3-4)."""
+        from anki_connect_server.config import get_config
+
+        cfg = get_config()
+        monkeypatch.setattr(cfg, "ANKIWEB_USER", None)
+        monkeypatch.setattr(cfg, "ANKIWEB_PASS", None)
+        mock_col = Mock()
+        with _make_wrapper(mock_col) as wrapper:
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(ValueError, match="required for sync"):
+                    wrapper.sync_to_ankiweb()
+
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+        assert all(r.exc_info is None for r in caplog.records)
+        # No auth was even attempted.
+        mock_col.sync_login.assert_not_called()
 
 
 class TestCollectionGeneration:
@@ -298,14 +384,29 @@ class TestCollectionGeneration:
 
         assert wrapper.collection_generation == 1
 
-    def test_full_upload_does_not_increment(self, patched_config):
-        """FULL_UPLOAD raises before any reopen, so generation stays at 0."""
+    def test_full_upload_increments(self, patched_config):
+        """FULL_UPLOAD reopens via _full_upload's reattach (+1)."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
         with _make_wrapper(mock_col) as wrapper:
-            with pytest.raises(SyncError, match="full upload"):
+            assert wrapper.collection_generation == 0
+            wrapper.sync_to_ankiweb()
+
+        assert wrapper.collection_generation == 1
+
+    def test_failed_upload_still_increments(self, patched_config):
+        """_full_upload reopens in a finally, so even a failed upload
+        increments generation (the collection is reopened to a usable state)."""
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_UPLOAD)
+        mock_col.full_upload_or_download = Mock(side_effect=RuntimeError("network died"))
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="Full collection upload failed"):
                 wrapper.sync_to_ankiweb()
 
-        assert wrapper.collection_generation == 0
+        # On failure reopen() must not be called (the backend collection is
+        # closed); _full_upload's finally called _reopen_collection before
+        # the SyncError wrapper raised, so generation advanced.
+        mock_col.reopen.assert_not_called()
+        assert wrapper.collection_generation == 1
 
     def test_repeated_syncs_accumulate(self, patched_config):
         """Each successful sync increments the generation by 1."""

@@ -217,15 +217,19 @@ curl -X POST http://localhost:8765/api \
 #### Misc
 - `version` - Get API version
 - `sync` - Sync with AnkiWeb
-- `syncStatus` - Get sync status
-- `syncMedia` - Sync media only
-- `multi` - Execute multiple actions
+- `syncStatus` - Get sync status (returns the sync requirement; `server`/`status` are included only when the sync backend provides them)
+- `syncMedia` - Sync media only (bidirectional; runs independently of collection sync)
+- `apiReflect` - Introspect the supported actions (scopes: ["actions"])
+- `reloadCollection` - No-op on a headless server (anki's reset is deprecated and does nothing)
+- `requestPermission` - Always granted (headless; no GUI prompt or CORS allowlist)
+- `multi` - Execute multiple actions (each entry replies per its own `version`, like upstream: failures always `{"result": null, "error": "..."}`; successes are the bare value for version ≤ 4, or `{"result": ..., "error": null}` for version ≥ 5)
 - `importPackage` - Import `.apkg` file
 - `exportPackage` - Export deck to `.apkg`
 
 #### Decks
 - `deckNames` - Get all deck names
 - `deckNamesAndIds` - Get deck names with IDs
+- `deckNameFromId` - Get a deck name from its ID
 - `createDeck` - Create a new deck
 - `deleteDecks` - Delete decks
 - `changeDeck` - Move cards to different deck
@@ -239,42 +243,92 @@ curl -X POST http://localhost:8765/api \
 #### Models
 - `modelNames` - Get all model names
 - `modelNamesAndIds` - Get model names with IDs
+- `modelNameFromId` - Get a model name from its ID
 - `modelFieldNames` - Get field names for model
 - `modelFieldsOnTemplates` - Get fields used in templates
-- `createModel` - Create a new note model
+- `createModel` - Create a new note model (returns the created model, like upstream)
 - `modelTemplates` - Get card templates
 - `modelStyling` - Get CSS styling
 - `updateModelTemplates` - Update templates
 - `updateModelStyling` - Update CSS
+- `modelFieldAdd` - Add a field to a model (optionally positioned at an index)
+- `modelFieldRemove` - Remove a field from a model (destroys that field's data in all notes)
+- `modelFieldRename` - Rename a model field (anki 26.8 also rewrites the renamed field's references in templates on save)
+- `modelFieldReposition` - Move a field to a new position
+- `modelFieldSetFont` - Set a field's font
+- `modelFieldSetFontSize` - Set a field's font size
+- `modelFieldSetDescription` - Set a field's description
+- `modelFieldDescriptions` - Get field descriptions
+- `modelFieldFonts` - Get per-field font and size
+- `modelTemplateAdd` - Add or update a card template
+- `modelTemplateRemove` - Remove a card template (a model must keep at least one)
+- `modelTemplateRename` - Rename a card template
+- `modelTemplateReposition` - Move a card template to a new position
+- `findAndReplaceInModels` - Find and replace text in templates/CSS across models (empty modelName = all models; replacements that would leave a dangling field reference are refused with a validation error — unlike upstream, broken templates are never persisted)
 
 #### Notes
 - `addNote` - Add a single note
 - `addNotes` - Add multiple notes
+- `canAddNote` - Check if a single note can be added
 - `canAddNotes` - Check if notes can be added
+- `canAddNotesWithErrorDetail` - Check whether notes can be added, with per-note error details
 - `updateNoteFields` - Update note fields
 - `updateNote` - Update note fields and/or tags in one call
 - `findNotes` - Search for notes
 - `notesInfo` - Get note details
 - `deleteNotes` - Delete notes
+- `removeEmptyNotes` - Remove unused note types (upstream parity: despite the name, removes note types with zero notes)
 - `addTags` - Add tags to notes
 - `removeTags` - Remove tags from notes
 - `getTags` - Get all tags
+- `replaceTags` - Replace a tag with another across the given notes
+- `replaceTagsInAllNotes` - Replace a tag with another across all notes
+- `clearUnusedTags` - Remove tags not used by any note
+- `getNoteTags` - Get a single note's tags
+- `updateNoteTags` - Replace all tags of a note (accepts a tag string or list; a string becomes one tag, but anki re-splits tags on whitespace when the note loads — prefer the list form)
 
 #### Cards
 - `findCards` - Search for cards
 - `cardsToNotes` - Get note IDs from card IDs
-- `cardsInfo` - Get card details
+- `cardsInfo` - Get card details (upstream's full shape: `factor` is the ease factor x10; `ease` is kept as a legacy alias)
+- `cardsModTime` - Get card modification timestamps
 - `suspend` - Suspend cards
 - `unsuspend` - Unsuspend cards
 - `areSuspended` - Check if cards are suspended
+- `suspended` - Check if a single card is suspended
 - `areDue` - Check if cards are due
 - `getIntervals` - Get card intervals
+- `answerCards` - Answer cards with a given ease (1=Again, 2=Hard, 3=Good, 4=Easy); returns a per-card success list; an invalid ease rejects the whole batch at validation time (upstream applies earlier answers first)
+- `forgetCards` - Reset cards back to new, clearing all scheduling state
+- `relearnCards` - Move cards into the relearning queue
+- `setEaseFactors` - Set card ease factors (10x the ease percentage, e.g. 3100 = 310%)
+- `getEaseFactors` - Get card ease factors (10x the ease percentage)
+- `setSpecificValueOfCard` - Raw/dangerous: set arbitrary card fields directly (critical fields are refused unless `warning_check` is true)
+
+#### Stats
+- `cardReviews` - Get review log entries for a deck since a given review ID (unknown deck names are created, as upstream does)
+- `getReviewsOfCards` - Get full review history per card
+- `getLatestReviewID` - Get the newest review ID for a deck (deck required; unknown names are created, as upstream does)
+- `getNumCardsReviewedToday` - Count reviews made today
+- `getNumCardsReviewedByDay` - Count reviews grouped by day
+- `insertReviews` - Raw review-log insertion (developer utility, rows of 9 integers)
+- `getDeckStats` - Deck due counts by deck name (keys are deck IDs; due counts aggregate child decks, `total_in_deck` counts direct cards per upstream, `total_including_children` is the aggregated total; `name` is the deck's own name per anki's due tree)
+- `getCollectionStatsHTML` - Full stats report as HTML
 
 #### Media
 - `getMediaDirPath` - Get media directory path
+- `getMediaFilesNames` - List media file names matching a glob pattern (patterns are confined to the media directory; absolute paths and `..` are rejected)
 - `storeMediaFile` - Store a media file (base64 `data`, `url`, or server-side `path`)
 - `retrieveMediaFile` - Retrieve a media file
 - `deleteMediaFile` - Delete a media file
+
+#### Not supported (headless server)
+
+These upstream AnkiConnect actions require the Anki desktop GUI or profile
+manager and are intentionally not implemented:
+
+- `getProfiles`, `loadProfile` - multi-profile support is an Anki desktop concept; this server serves a single collection via `ANKICONNECT_COLLECTION_PATH`
+- `guiAddCards`, `guiAnswerCard`, `guiBrowse`, `guiCheckDatabase`, `guiCurrentCard`, `guiDeckBrowser`, `guiDeckOverview`, `guiDeckReview`, `guiEditNote`, `guiExitAnki`, `guiImportFile`, `guiReviewActive`, `guiSelectedNotes`, `guiShowAnswer`, `guiShowQuestion`, `guiStartCardTimer`, `guiUndo` - all `gui*` actions open or drive Anki desktop windows
 
 ## 🤖 MCP Server
 

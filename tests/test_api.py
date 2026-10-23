@@ -32,6 +32,17 @@ async def test_health_endpoint(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_root_get_serves_banner(app_with_wrapper):
+    """GET / and /api serve a version banner instead of 405 (E2E P3-6:
+    upstream answers empty-body requests with "AnkiConnect v.<version>")."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for path in ("/", "/api"):
+            response = await client.get(path)
+            assert response.status_code == 200
+            assert "AnkiConnect v.6" in response.text
+
+
+@pytest.mark.asyncio
 async def test_version_action(app_with_wrapper):
     """Test version action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -40,6 +51,33 @@ async def test_version_action(app_with_wrapper):
         data = response.json()
         assert data["result"] == 6
         assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_api_reflect_action(app_with_wrapper):
+    """Test apiReflect action."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "apiReflect", "version": 6, "params": {"scopes": ["actions"]}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["error"] is None
+        assert data["result"]["scopes"] == ["actions"]
+        assert "version" in data["result"]["actions"]
+
+
+@pytest.mark.asyncio
+async def test_request_permission_action(app_with_wrapper):
+    """Test requestPermission action: always granted headless."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/", json={"action": "requestPermission", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {
+            "result": {"permission": "granted", "requireApikey": False, "version": 6},
+            "error": None,
+        }
 
 
 @pytest.mark.asyncio
@@ -99,6 +137,93 @@ async def test_model_field_names_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_model_field_rename_action(app_with_wrapper):
+    """Test modelFieldRename action."""
+    app_with_wrapper.create_model(
+        "M5RenameModel",
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "modelFieldRename",
+                "version": 6,
+                "params": {
+                    "modelName": "M5RenameModel",
+                    "oldFieldName": "Back",
+                    "newFieldName": "Reverse",
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] is None
+        assert data["error"] is None
+    assert "Reverse" in app_with_wrapper.model_field_names("M5RenameModel")
+
+
+@pytest.mark.asyncio
+async def test_find_and_replace_in_models_action(app_with_wrapper):
+    """Test findAndReplaceInModels action."""
+    app_with_wrapper.create_model(
+        "M5ReplaceModel",
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "MARKER {{Front}}", "Back": "{{Back}}"}],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "findAndReplaceInModels",
+                "version": 6,
+                "params": {
+                    "modelName": "M5ReplaceModel",
+                    "findText": "MARKER",
+                    "replaceText": "CHANGED",
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == 1
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_model_template_add_invalid_action_error_envelope(app_with_wrapper):
+    """Invalid template data is reported in the error envelope, not as a 500.
+
+    anki's CardTypeError for a front with no field replacement is caused by
+    client-supplied data, so it must surface as {"result": null, "error": ...}
+    with HTTP 200 like any other AnkiConnect action error.
+    """
+    app_with_wrapper.create_model(
+        "M5InvalidModel",
+        ["Front", "Back"],
+        [{"Name": "Card 1", "Front": "{{Front}}", "Back": "{{Back}}"}],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "modelTemplateAdd",
+                "version": 6,
+                "params": {
+                    "modelName": "M5InvalidModel",
+                    "template": {"Name": "Broken", "Front": "no fields here", "Back": "{{Front}}"},
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] is None
+        assert isinstance(data["error"], str)
+        assert "field replacement" in data["error"]
+
+
+@pytest.mark.asyncio
 async def test_add_note_action(app_with_wrapper):
     """Test addNote action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -145,6 +270,29 @@ async def test_can_add_notes_with_error_detail_action(app_with_wrapper):
         data = response.json()
         assert data["result"] == [{"canAdd": True}]
         assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_can_add_note_action(app_with_wrapper):
+    """Test canAddNote action."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "canAddNote",
+                "version": 6,
+                "params": {
+                    "note": {
+                        "deckName": "Default",
+                        "modelName": "Basic",
+                        "fields": {"Front": "CanAddApi", "Back": "World"},
+                    }
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": True, "error": None}
 
 
 @pytest.mark.asyncio
@@ -257,6 +405,119 @@ async def test_unsuspend_action(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_suspended_action(app_with_wrapper):
+    """Test suspended action."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    anki_wrapper.suspend(card_ids)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "suspended", "version": 6, "params": {"card": card_ids[0]}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": True, "error": None}
+
+
+@pytest.mark.asyncio
+async def test_answer_cards_action(app_with_wrapper):
+    """Test answerCards action over HTTP."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "answerCards",
+                "version": 6,
+                "params": {"answers": [{"cardId": card_ids[0], "ease": 3}]},
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": [True], "error": None}
+
+        response = await client.post(
+            "/",
+            json={
+                "action": "answerCards",
+                "version": 6,
+                "params": {"answers": [{"cardId": 999999999, "ease": 3}]},
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["result"] == [False]
+
+
+@pytest.mark.asyncio
+async def test_set_ease_factors_action(app_with_wrapper):
+    """Test setEaseFactors action over HTTP."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "setEaseFactors",
+                "version": 6,
+                "params": {"cards": card_ids, "easeFactors": [3000]},
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == [True]
+        assert data["error"] is None
+        assert anki_wrapper.cards_info(card_ids)[0]["ease"] == 3000
+
+
+@pytest.mark.asyncio
+async def test_get_deck_stats_action(app_with_wrapper):
+    """Test getDeckStats action."""
+    anki_wrapper = app_with_wrapper
+    anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "getDeckStats", "version": 6, "params": {"decks": ["Default"]}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["error"] is None
+        result = data["result"]
+        assert isinstance(result, dict)
+        assert len(result) == 1
+        entry = next(iter(result.values()))
+        assert "new_count" in entry
+
+
+@pytest.mark.asyncio
+async def test_get_num_cards_reviewed_today_action(app_with_wrapper):
+    """Test getNumCardsReviewedToday action."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    card_ids = anki_wrapper.find_cards(f"nid:{note_id}")
+    anki_wrapper.answer_cards([{"cardId": card_ids[0], "ease": 3}])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/", json={"action": "getNumCardsReviewedToday", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] >= 1
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
 async def test_get_tags_action(app_with_wrapper):
     """Test getTags action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -299,6 +560,57 @@ async def test_add_and_remove_tags_action(app_with_wrapper):
         data = response.json()
         assert data["error"] is None
         assert anki_wrapper.col.get_note(note_id).tags == ["foo"]
+
+
+@pytest.mark.asyncio
+async def test_replace_tags_action(app_with_wrapper):
+    """Test replaceTags action end-to-end."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    anki_wrapper.add_tags([note_id], "old")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            json={
+                "action": "replaceTags",
+                "version": 6,
+                "params": {
+                    "notes": [note_id],
+                    "tag_to_replace": "old",
+                    "replace_with_tag": "fresh",
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": None, "error": None}
+
+        response = await client.post(
+            "/", json={"action": "getNoteTags", "version": 6, "params": {"note": note_id}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] == ["fresh"]
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_note_tags_action(app_with_wrapper):
+    """Test getNoteTags action."""
+    anki_wrapper = app_with_wrapper
+    note_id = anki_wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+    )
+    anki_wrapper.add_tags([note_id], "tag-one tag-two")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/", json={"action": "getNoteTags", "version": 6, "params": {"note": note_id}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"result": ["tag-one", "tag-two"], "error": None}
 
 
 @pytest.mark.asyncio
@@ -409,6 +721,29 @@ async def test_server_error_returns_500(app_with_wrapper, monkeypatch):
     ) as client:
         response = await client.post("/", json={"action": "boom", "version": 6})
         assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_sync_error_returns_200_with_error(app_with_wrapper, monkeypatch):
+    """SyncError (client-caused sync failure) is reported in-body with HTTP 200
+    like upstream AnkiConnect's error envelope, not as a server 500 (E2E P2-3:
+    wrong credentials / unreachable endpoint / concurrent-lock were 500s)."""
+    from anki_connect_server import handlers
+    from anki_connect_server.sync import SyncError
+
+    async def bad_sync(wrapper, params):
+        raise SyncError("AnkiWeb authentication failed for http://sync.example:8270/: nope")
+
+    monkeypatch.setitem(handlers.ACTION_HANDLERS, "boom", (handlers.EmptyParams, bad_sync))
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post("/", json={"action": "boom", "version": 6})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["result"] is None
+        assert "authentication failed for http://sync.example:8270/" in data["error"]
 
 
 @pytest.mark.asyncio

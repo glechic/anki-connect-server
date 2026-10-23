@@ -370,10 +370,11 @@ def sync() -> SyncResult:
     """Sync collection with AnkiWeb.
 
     Returns a structured SyncResult describing the collection outcome
-    (no_changes / merged / downloaded), the download reason if any, the
-    media sync counters, and any server message. Full uploads are never
-    performed: if AnkiWeb is empty and requests a full upload, the call
-    raises instead of replacing remote data.
+    (no_changes / merged / uploaded / downloaded), the download reason if
+    any, the media sync counters, and any server message. A full upload is
+    only performed when the remote collection is empty (anki's FULL_UPLOAD
+    requirement, which by protocol construction never has remote data to
+    lose) — this seeds a fresh sync account with the local collection.
     """
     return get_anki_wrapper().sync_to_ankiweb()
 

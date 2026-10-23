@@ -25,6 +25,7 @@ class _StrictModel(BaseModel):
 class CollectionSyncOutcome(StrEnum):
     NO_CHANGES = "no_changes"
     MERGED = "merged"
+    UPLOADED = "uploaded"
     DOWNLOADED = "downloaded"
 
 
