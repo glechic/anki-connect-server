@@ -32,6 +32,17 @@ async def test_health_endpoint(app_with_wrapper):
 
 
 @pytest.mark.asyncio
+async def test_root_get_serves_banner(app_with_wrapper):
+    """GET / and /api serve a version banner instead of 405 (E2E P3-6:
+    upstream answers empty-body requests with "AnkiConnect v.<version>")."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for path in ("/", "/api"):
+            response = await client.get(path)
+            assert response.status_code == 200
+            assert "AnkiConnect v.6" in response.text
+
+
+@pytest.mark.asyncio
 async def test_version_action(app_with_wrapper):
     """Test version action."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

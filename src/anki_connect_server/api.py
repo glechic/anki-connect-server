@@ -4,12 +4,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.config import Config, get_config
-from anki_connect_server.handlers import dispatch
+from anki_connect_server.handlers import API_VERSION, dispatch
 from anki_connect_server.sync import SyncError
 from anki_connect_server.types import JsonValue
 
@@ -68,6 +68,14 @@ def get_request_wrapper(request: Request) -> AnkiWrapper:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy"}
+
+
+@app.get("/", response_model=None, include_in_schema=False)
+@app.get("/api", response_model=None, include_in_schema=False)
+async def root_banner() -> PlainTextResponse:
+    """Serve a version banner on GET (upstream answers empty-body requests
+    with "AnkiConnect v.<version>"); previously a GET returned 405 (E2E P3-6)."""
+    return PlainTextResponse(f"AnkiConnect v.{API_VERSION} (anki-connect-server); POST /api")
 
 
 # No response_model: legacy (version ≤4) requests return the bare result,
