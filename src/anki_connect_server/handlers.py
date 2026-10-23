@@ -227,8 +227,8 @@ async def handle_model_fields_on_templates(wrapper: AnkiWrapper, params: ModelNa
     return await _run(wrapper.model_fields_on_templates, params.modelName)
 
 
-async def handle_create_model(wrapper: AnkiWrapper, params: CreateModelParams) -> None:
-    await _run(
+async def handle_create_model(wrapper: AnkiWrapper, params: CreateModelParams) -> JsonObject:
+    return await _run(
         wrapper.create_model,
         params.modelName,
         params.inOrderFields,

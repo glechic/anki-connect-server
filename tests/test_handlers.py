@@ -1794,6 +1794,7 @@ class TestStatsHandlers:
             "learn_count",
             "review_count",
             "total_in_deck",
+            "total_including_children",
         }
         new_count = entry["new_count"]
         assert isinstance(new_count, int)
@@ -1822,6 +1823,12 @@ class TestStatsHandlers:
         new_count = parent_entry["new_count"]
         assert isinstance(new_count, int)
         assert new_count >= 1
+        # total_in_deck is upstream's direct-cards field (the parent has no
+        # direct cards here); total_including_children is the aggregated total
+        # (E2E P2-6: the due counts aggregate, so clients need the aggregate).
+        assert parent_entry["total_in_deck"] == 0
+        assert isinstance(parent_entry["total_including_children"], int)
+        assert parent_entry["total_including_children"] >= 1
 
     @pytest.mark.asyncio
     async def test_handle_get_collection_stats_html(self, anki_wrapper):

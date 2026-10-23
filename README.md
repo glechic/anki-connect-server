@@ -246,14 +246,14 @@ curl -X POST http://localhost:8765/api \
 - `modelNameFromId` - Get a model name from its ID
 - `modelFieldNames` - Get field names for model
 - `modelFieldsOnTemplates` - Get fields used in templates
-- `createModel` - Create a new note model
+- `createModel` - Create a new note model (returns the created model, like upstream)
 - `modelTemplates` - Get card templates
 - `modelStyling` - Get CSS styling
 - `updateModelTemplates` - Update templates
 - `updateModelStyling` - Update CSS
 - `modelFieldAdd` - Add a field to a model (optionally positioned at an index)
 - `modelFieldRemove` - Remove a field from a model (destroys that field's data in all notes)
-- `modelFieldRename` - Rename a model field
+- `modelFieldRename` - Rename a model field (anki 26.8 also rewrites the renamed field's references in templates on save)
 - `modelFieldReposition` - Move a field to a new position
 - `modelFieldSetFont` - Set a field's font
 - `modelFieldSetFontSize` - Set a field's font size
@@ -264,7 +264,7 @@ curl -X POST http://localhost:8765/api \
 - `modelTemplateRemove` - Remove a card template (a model must keep at least one)
 - `modelTemplateRename` - Rename a card template
 - `modelTemplateReposition` - Move a card template to a new position
-- `findAndReplaceInModels` - Find and replace text in templates/CSS across models (empty modelName = all models)
+- `findAndReplaceInModels` - Find and replace text in templates/CSS across models (empty modelName = all models; replacements that would leave a dangling field reference are refused with a validation error — unlike upstream, broken templates are never persisted)
 
 #### Notes
 - `addNote` - Add a single note
@@ -311,7 +311,7 @@ curl -X POST http://localhost:8765/api \
 - `getNumCardsReviewedToday` - Count reviews made today
 - `getNumCardsReviewedByDay` - Count reviews grouped by day
 - `insertReviews` - Raw review-log insertion (developer utility, rows of 9 integers)
-- `getDeckStats` - Deck due counts by deck name (keys are deck IDs)
+- `getDeckStats` - Deck due counts by deck name (keys are deck IDs; due counts aggregate child decks, `total_in_deck` counts direct cards per upstream, `total_including_children` is the aggregated total)
 - `getCollectionStatsHTML` - Full stats report as HTML
 
 #### Media

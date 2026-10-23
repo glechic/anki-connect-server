@@ -579,7 +579,7 @@ class AnkiWrapper:
         card_templates: list[dict[str, str]],
         css: str = "",
         is_cloze: bool = False,
-    ) -> None:
+    ) -> JsonObject:
         notetype = self.col.models.new(model_name)
         for field_name in in_order_fields:
             field = self.col.models.new_field(field_name)
@@ -595,6 +595,9 @@ class AnkiWrapper:
             notetype["css"] = css
 
         self.col.models.add(notetype)
+        # Upstream returns the created model dict; clients use it to obtain
+        # the new modelId without a modelNamesAndIds round-trip (E2E P2-8).
+        return cast(JsonObject, dict(notetype))
 
     def model_templates(self, model_name: str) -> dict[str, dict[str, str]]:
         model = self._get_model_by_name(model_name)
@@ -794,7 +797,11 @@ class AnkiWrapper:
         An empty model_name means every model in the collection. Every
         visited model is saved (mirroring upstream, which saves
         unconditionally); the return value counts the models in which at
-        least one replacement happened.
+        least one replacement happened. A replacement that would leave a
+        dangling field reference in a template is refused with a clean
+        client error — intentional strictness: unlike upstream, this server
+        validates templates on save and does not persist broken templates
+        (E2E suite_5 MD-26).
         """
         if model_name:
             self._get_model_or_raise(model_name)
@@ -1557,9 +1564,13 @@ class AnkiWrapper:
         """Get deck due counts keyed by deck id (upstream parity).
 
         Missing decks are created (mirroring upstream's decks.id() call), and
-        a parent's entry aggregates all descendant decks via the flattened
+        a parent's due counts aggregate all descendant decks via the flattened
         due tree. The wire keys are snake_case, matching upstream
-        deckStatsToJson.
+        deckStatsToJson. ``total_in_deck`` is upstream's field and counts
+        only cards directly in the deck; ``total_including_children`` (an
+        extra key upstream does not send) is the descendant-aggregated total,
+        added because the due counts aggregate while upstream's total does
+        not — clients would otherwise mix the two semantics (E2E P2-6).
         """
         deck_ids = {self.col.decks.id(name) for name in decks}
         result: dict[int, JsonObject] = {}
@@ -1576,6 +1587,7 @@ class AnkiWrapper:
                         "learn_count": node.learn_count,
                         "review_count": node.review_count,
                         "total_in_deck": node.total_in_deck,
+                        "total_including_children": node.total_including_children,
                     },
                 )
         return result
