@@ -197,7 +197,9 @@ class AnkiWrapper:
             return (0, 0)
         return (int(row[0]), int(row[1]))
 
-    def _normal_outcome_from_stamps(self, pre_sync_stamps: tuple[int, int]) -> CollectionSyncOutcome:
+    def _normal_outcome_from_stamps(
+        self, pre_sync_stamps: tuple[int, int]
+    ) -> CollectionSyncOutcome:
         """Resolve a NO_CHANGES requirement into a truthful outcome.
 
         `required` describes the collection state *after* syncing: rslib's
