@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `sync` reports a truthful collection outcome (issue #13): rslib's
+  `sync_collection()` reports the *post-sync* `required`, which is always
+  `no_changes` after a completed normal sync, so `merged` was unreachable and
+  transfers in either direction read as "nothing happened". The outcome is now
+  detected independently of `required` by diffing the collection stamps
+  (mod, usn) across the sync — a completed normal sync always rewrites them
+  (rslib `finish.rs`), while an in-step no-op leaves them untouched. `merged`
+  now means the sync actually transferred/reconciled changes; `no_changes`
+  means both sides were already in step. E2E SY-05/SY-12 tightened to expect
+  `merged` for data-transferring syncs.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added
