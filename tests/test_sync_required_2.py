@@ -10,6 +10,7 @@ import logging
 import os
 import tempfile
 from contextlib import contextmanager
+from itertools import cycle
 from unittest.mock import Mock, patch
 
 import pytest
@@ -53,10 +54,18 @@ def _make_mock_col(
     *,
     new_endpoint: str = "",
     server_message: str = "",
+    pre_stamps: tuple[int, int] = (1000, 5),
+    post_stamps: tuple[int, int] | None = None,
 ):
     """Build a Mock Collection whose sync_collection returns `required`.
 
     `required` is a SyncCollectionResponse enum value (or int).
+
+    The collection stamps (mod, usn) returned by "select mod, usn from col"
+    are pre_stamps before the sync and post_stamps after it (defaults to
+    pre_stamps, i.e. an idempotent no-op sync). Reads alternate per call:
+    a NO_CHANGES-path sync performs exactly two reads (pre snapshot, post
+    diff), full-sync paths only the pre snapshot.
     """
     mock_col = Mock()
     mock_auth = Mock(hkey="test_key")
@@ -68,6 +77,7 @@ def _make_mock_col(
 
     mock_col.sync_login = Mock(return_value=mock_auth)
     mock_col.sync_collection = Mock(return_value=mock_result)
+    mock_col.db = Mock(first=Mock(side_effect=cycle([pre_stamps, post_stamps or pre_stamps])))
     # media sync is now part of sync_collection(sync_media=True); wait polls
     # media_sync_status. Default: already inactive so _wait_for_media returns.
     mock_col.media_sync_status = Mock(return_value=_mock_media_status(active=False))
@@ -160,7 +170,11 @@ class TestSyncRequirementResolution:
                 wrapper.sync_to_ankiweb()
 
     def test_normal_sync_merges(self, patched_config):
-        """NORMAL_SYNC reports a merged outcome and reopens the collection."""
+        """NORMAL_SYNC reports a merged outcome and reopens the collection.
+
+        Note: modern anki backends (>= 2.1.56, incl. the pinned >= 26.5)
+        perform the normal sync internally and never return NORMAL_SYNC
+        from sync_collection; this branch is kept defensively."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.NORMAL_SYNC)
         with _make_wrapper(mock_col) as wrapper:
             result = wrapper.sync_to_ankiweb()
@@ -170,13 +184,33 @@ class TestSyncRequirementResolution:
         mock_col.full_upload_or_download.assert_not_called()
 
     def test_no_changes(self, patched_config):
-        """NO_CHANGES reports a no_changes outcome."""
+        """NO_CHANGES with unchanged collection stamps reports no_changes."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.NO_CHANGES)
         with _make_wrapper(mock_col) as wrapper:
             result = wrapper.sync_to_ankiweb()
 
         assert result.collection.outcome is CollectionSyncOutcome.NO_CHANGES
         mock_col.full_upload_or_download.assert_not_called()
+
+    def test_no_changes_with_transferred_data_reports_merged(self, patched_config):
+        """Issue #13: a completed normal sync with actual transfer reports merged.
+
+        rslib's sync_collection sets `required` to NO_CHANGES after a
+        completed normal sync (the state *after* syncing), so the outcome
+        cannot come from `required` alone. A completed normal sync rewrites
+        the collection stamps (rslib finish.rs finalize_sync), and the
+        wrapper reports merged whenever they changed — regardless of whether
+        the transfer was a local push or a remote pull."""
+        mock_col, _, _ = _make_mock_col(
+            SyncCollectionResponse.NO_CHANGES,
+            pre_stamps=(1000, 5),
+            post_stamps=(2000, 7),
+        )
+        with _make_wrapper(mock_col) as wrapper:
+            result = wrapper.sync_to_ankiweb()
+
+        assert result.collection.outcome is CollectionSyncOutcome.MERGED
+        assert result.collection.local_data_replaced is False
 
     def test_new_endpoint_redirect_honoured(self, patched_config):
         """A sync endpoint redirect is applied to auth.endpoint before download."""
@@ -230,6 +264,7 @@ class TestSyncSafety:
         mock_col = Mock()
         mock_auth = Mock(hkey="test_key")
         mock_col.sync_login = Mock(return_value=mock_auth)
+        mock_col.db = Mock(first=Mock(return_value=(1000, 5)))
         mock_col.sync_collection = Mock(side_effect=RuntimeError("auth server down"))
         mock_col.close = Mock()
         mock_col.media_sync_status = Mock(return_value=_mock_media_status(active=False))

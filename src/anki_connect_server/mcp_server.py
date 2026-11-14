@@ -369,12 +369,15 @@ def export_package(deck: str, path: str, include_sched: bool = False) -> bool:
 def sync() -> SyncResult:
     """Sync collection with AnkiWeb.
 
-    Returns a structured SyncResult describing the collection outcome
-    (no_changes / merged / uploaded / downloaded), the download reason if
-    any, the media sync counters, and any server message. A full upload is
-    only performed when the remote collection is empty (anki's FULL_UPLOAD
-    requirement, which by protocol construction never has remote data to
-    lose) — this seeds a fresh sync account with the local collection.
+    Returns a structured SyncResult describing the collection outcome —
+    "no_changes" means both sides were already in step, "merged" means
+    the sync actually transferred/reconciled changes locally and/or on
+    AnkiWeb, and "uploaded"/"downloaded" are full one-way syncs — plus
+    the download reason if any, the media sync counters, and any server
+    message. A full upload is only performed when the remote collection
+    is empty (anki's FULL_UPLOAD requirement, which by protocol
+    construction never has remote data to lose) — this seeds a fresh
+    sync account with the local collection.
     """
     return get_anki_wrapper().sync_to_ankiweb()
 

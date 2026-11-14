@@ -290,9 +290,10 @@ def sy04_roundtrip() -> None:
 
 
 # ---------------------------------------------------------------- SY-05 two-way sync
-# Spec: SY-05 — B is not a black hole B: add note sync-F2 in SyncDeck → sync → completed (outcome merged
-#       or, per anki's post-sync reporting, no_changes — a completed normal sync always reports
-#       no_changes, see rslib normal.rs; the data assertions below are the real proof); A: sync → same; A
+# Spec: SY-05 — B is not a black hole B: add note sync-F2 in SyncDeck → sync → completed (outcome merged:
+#       the normal sync transferred B's local change to AnkiWeb, so the collection stamps changed —
+#       see issue #13; a completed normal sync reports required=no_changes post-sync, rslib normal.rs);
+#       A: sync → merged (pulls B's change); A
 #       findNotes Front:"sync-F2" → found. (Two-way sync.)
 
 
@@ -306,30 +307,32 @@ def sy05_two_way() -> None:
         check("SY-05", False, f"B addNote sync-F2 failed: {e}")
         return
     s1, e1, r1 = call(B, "sync")
-    # anki semantics (rslib normal.rs): a *completed* normal sync always
-    # reports required=NO_CHANGES (the post-sync state) — "merged" is
-    # unreachable via sync. The data-flow checks below carry the proof.
+    # issue #13 contract: a normal sync that transferred data reports
+    # merged (detected via the collection stamp diff); anki itself only
+    # reports required=NO_CHANGES post-sync (rslib normal.rs), which is
+    # NOT the outcome the server surfaces. The data-flow checks below
+    # carry the proof.
     ok1 = (
         e1 is None
         and isinstance(r1, dict)
-        and (r1.get("collection") or {}).get("outcome") in ("merged", "no_changes")
+        and (r1.get("collection") or {}).get("outcome") == "merged"
     )
     check(
         "SY-05",
         ok1,
-        f"B sync after adding sync-F2: {show('sync', {}, s1, r1 if e1 is None else {'error': e1})} (expected merged|no_changes; data checks follow)",
+        f"B sync after adding sync-F2: {show('sync', {}, s1, r1 if e1 is None else {'error': e1})} (expected merged; data checks follow)",
     )
 
     s2, e2, r2 = call(A, "sync")
     ok2 = (
         e2 is None
         and isinstance(r2, dict)
-        and (r2.get("collection") or {}).get("outcome") in ("merged", "no_changes")
+        and (r2.get("collection") or {}).get("outcome") == "merged"
     )
     check(
         "SY-05",
         ok2,
-        f"A sync after B's: {show('sync', {}, s2, r2 if e2 is None else {'error': e2})} (expected merged|no_changes; data checks follow)",
+        f"A sync after B's: {show('sync', {}, s2, r2 if e2 is None else {'error': e2})} (expected merged; data checks follow)",
     )
 
     try:
@@ -578,8 +581,8 @@ def sy12_collection_generation() -> None:
         coll = res.get("collection") or {}
         check(
             "SY-12",
-            coll.get("outcome") in ("merged", "no_changes"),
-            f"post-addNote sync -> {show('sync', {}, status, res)}",
+            coll.get("outcome") == "merged",
+            f"post-addNote sync -> {show('sync', {}, status, res)} (expected merged: the sync pushed sync-F3, issue #13)",
         )
     else:
         record("SY-12", f"post-addNote sync attempt: HTTP {status}, error={err!r}")

@@ -23,7 +23,12 @@ class _StrictModel(BaseModel):
 
 
 class CollectionSyncOutcome(StrEnum):
+    # Both sides were already in step; nothing was transferred.
     NO_CHANGES = "no_changes"
+    # A normal sync ran and transferred/reconciled changes (one or both
+    # directions). rslib's post-sync `required` is always NO_CHANGES after
+    # a normal sync (rslib normal.rs), so `merged` is determined by
+    # diffing the collection stamps across the sync (anki_wrapper).
     MERGED = "merged"
     UPLOADED = "uploaded"
     DOWNLOADED = "downloaded"

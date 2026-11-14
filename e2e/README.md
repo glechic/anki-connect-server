@@ -61,6 +61,32 @@ keeps results deterministic; review-count assertions are relative by
 design. `suite_meta.py` reads the repo `README.md` (path configurable
 via argv[2]) to verify the documented action list against `apiReflect`.
 
+## Operational notes (podman)
+
+- **Podman is the e2e runner** (Docker's daemon is irrelevant, even when
+  installed). Its machine is often down: if builds/runs fail with
+  `unable to connect … connection refused (127.0.0.1:55511)`, start it
+  with `podman machine start podman-machine-default`.
+- **The image captures the working tree**: `podman build` bakes in
+  uncommitted changes, so rebuild before every pass — no commit is needed
+  to test a dirty revision.
+- **Run order**: `suite_sync.py` first, against a freshly created
+  4-container topology — SY-02/SY-03 assume an empty collection, and stale
+  state fails them spuriously (that's not a regression; reset and rerun,
+  see below). Then run `run_all.py` against a *separate* fresh container.
+- **Preflight container-name DNS** before suite_sync:
+  `podman exec acs-e2e-synca python -c "import socket; print(socket.gethostbyname('acs-e2e-syncsrv'))"`.
+  If it fails, substitute the sync server's IP (from `podman inspect
+  acs-e2e-syncsrv`) into `ANKICONNECT_ANKIWEB_URL`.
+- **Credentials stay on the self-hosted sync server**: the suites are
+  designed for that local `anki.syncserver`; never point them at a real
+  AnkiWeb account.
+- **Capture output to a file** and grep it afterwards; don't pipe suites
+  through `tail` — the early PASS lines are evidence you cannot recover
+  without a full topology reset.
+- **Reset between runs**:
+  `podman rm -f acs-e2e-syncsrv acs-e2e-synca acs-e2e-syncb acs-e2e-syncnone acs-e2e-test && podman network rm acs-e2enet`
+
 ## Common criteria (apply to every suite)
 
 - **C1 transport**: every action responds on POST `/api` (spot-check `/` too).

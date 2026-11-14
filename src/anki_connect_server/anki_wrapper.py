@@ -178,6 +178,42 @@ class AnkiWrapper:
             return "", "", ""
         return status.progress.checked, status.progress.added, status.progress.removed
 
+    def _collection_sync_stamps(self) -> tuple[int, int]:
+        """Return the collection row's (mod, usn) sync stamps.
+
+        Both values are rewritten by rslib's finalize_sync at the end of
+        every completed normal sync (rslib finish.rs), and left untouched
+        when the pre-sync status check reports NoChanges (rslib normal.rs
+        returns early without touching the collection). Diffing them
+        before/after sync_collection therefore tells whether a normal sync
+        actually ran — which the returned `required` value alone cannot, as
+        it describes the post-sync state (see sync_to_ankiweb).
+        """
+        db = self.col.db
+        if not db:
+            return (0, 0)
+        row = db.first("select mod, usn from col")
+        if not row:
+            return (0, 0)
+        return (int(row[0]), int(row[1]))
+
+    def _normal_outcome_from_stamps(
+        self, pre_sync_stamps: tuple[int, int]
+    ) -> CollectionSyncOutcome:
+        """Resolve a NO_CHANGES requirement into a truthful outcome.
+
+        `required` describes the collection state *after* syncing: rslib's
+        normal.rs sets it to NO_CHANGES once a completed normal sync
+        finishes, so it cannot distinguish "both sides were already in
+        step" from "changes were transferred". A completed normal sync
+        always rewrites the collection stamps in finalize_sync (rslib
+        finish.rs), while a genuine no-op leaves them untouched, so the
+        stamp diff is the actual-transfer signal (issue #13).
+        """
+        if self._collection_sync_stamps() != pre_sync_stamps:
+            return CollectionSyncOutcome.MERGED
+        return CollectionSyncOutcome.NO_CHANGES
+
     def _wait_for_media(
         self,
         progress: SyncProgressCallback | None = None,
@@ -236,7 +272,15 @@ class AnkiWrapper:
             auth = self._login(user, pass_, url)
 
             self._report(progress, "Synchronizing collection")
+            # rslib's sync_collection reports the *post-sync* state in
+            # `required` — a completed normal sync always reports
+            # NO_CHANGES (rslib normal.rs) — so the actual transfer is
+            # detected by diffing collection stamps instead (see
+            # _normal_outcome_from_stamps). The full-sync paths below
+            # ignore the snapshot: they have hardcoded outcomes and
+            # replace/reopen the collection wholesale.
             try:
+                pre_sync_stamps = self._collection_sync_stamps()
                 result = self.col.sync_collection(auth, sync_media=True)
             except Exception as error:
                 self.close()
@@ -294,6 +338,10 @@ class AnkiWrapper:
                     local_data_replaced=False,
                 )
             elif result.required == SyncCollectionResponse.NORMAL_SYNC:
+                # Legacy anki backends could report NORMAL_SYNC *pre* sync;
+                # modern backends (anki >= 2.1.56, incl. the pinned >= 26.5)
+                # perform the normal sync internally and never return this
+                # value from sync_collection, so this branch is defensive.
                 collection = CollectionSyncResult(
                     outcome=CollectionSyncOutcome.MERGED,
                     local_data_replaced=False,
@@ -301,7 +349,7 @@ class AnkiWrapper:
                 needs_reopen = True
             elif result.required == SyncCollectionResponse.NO_CHANGES:
                 collection = CollectionSyncResult(
-                    outcome=CollectionSyncOutcome.NO_CHANGES,
+                    outcome=self._normal_outcome_from_stamps(pre_sync_stamps),
                     local_data_replaced=False,
                 )
                 needs_reopen = True
