@@ -43,6 +43,7 @@ Set environment variables before running the server:
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (required for sync) |
 | `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (required for sync) |
 | `ANKICONNECT_ANKIWEB_URL` | No | - | Custom sync server URL (optional) |
+| `ANKICONNECT_FAIL_ON_FULL_SYNC_CONFLICT` | No | `false` | Abort instead of overwriting local collection on a full-sync conflict |
 
 ### Example `.env` File
 
@@ -188,6 +189,16 @@ curl -X POST http://localhost:8765/api \
 Then reference the stored file in a note field with `[sound:sky_us.ogg]`.
 
 #### Sync with AnkiWeb
+
+> **Protect unsynced local changes:** Set
+> `ANKICONNECT_FAIL_ON_FULL_SYNC_CONFLICT=true` if unattended clients should
+> **fail closed** instead of automatically downloading the remote collection
+> when both sides require a full sync. The API returns a descriptive error
+> before the destructive full download, leaving the local collection open.
+> This does **not** prevent a “remote-only” initial download or replace a
+> regular backup: take a verified backup before enabling synchronization.
+> The default remains `false` (historical remote-wins behavior).
+
 
 ```bash
 curl -X POST http://localhost:8765/api \

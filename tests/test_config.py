@@ -21,6 +21,23 @@ def test_config_defaults(monkeypatch):
     assert cfg.BIND == "127.0.0.1"
 
 
+def test_config_fail_on_full_sync_conflict_env(monkeypatch):
+    """The opt-in guard is parsed from env, and defaults to disabled."""
+    from anki_connect_server.config import Config
+
+    monkeypatch.delenv("ANKICONNECT_FAIL_ON_FULL_SYNC_CONFLICT", raising=False)
+    default = Config(COLLECTION_PATH="/test/path.anki2", _env_file=None)  # type: ignore[call-arg]
+    assert default.FAIL_ON_FULL_SYNC_CONFLICT is False
+
+    monkeypatch.setenv("ANKICONNECT_FAIL_ON_FULL_SYNC_CONFLICT", "true")
+    enabled = Config(COLLECTION_PATH="/test/path.anki2", _env_file=None)  # type: ignore[call-arg]
+    assert enabled.FAIL_ON_FULL_SYNC_CONFLICT is True
+
+    monkeypatch.setenv("ANKICONNECT_FAIL_ON_FULL_SYNC_CONFLICT", "false")
+    disabled = Config(COLLECTION_PATH="/test/path.anki2", _env_file=None)  # type: ignore[call-arg]
+    assert disabled.FAIL_ON_FULL_SYNC_CONFLICT is False
+
+
 def test_config_custom_values():
     """Test custom configuration values."""
     from anki_connect_server.config import Config

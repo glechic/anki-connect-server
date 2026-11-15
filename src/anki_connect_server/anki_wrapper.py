@@ -291,6 +291,22 @@ class AnkiWrapper:
             if result.new_endpoint:
                 auth.endpoint = result.new_endpoint
 
+            # sync_collection() returns FULL_SYNC when incompatible changes
+            # require a one-way full replacement. In the default mode we
+            # preserve the existing remote-wins behavior. Strict deployments
+            # can instead abort BEFORE close_for_full_sync()/full_download,
+            # so local notes are not silently overwritten on conflict.
+            if (
+                result.required == SyncCollectionResponse.FULL_SYNC
+                and get_config().FAIL_ON_FULL_SYNC_CONFLICT
+            ):
+                raise SyncError(
+                    "Full AnkiWeb sync conflict detected; refusing automatic "
+                    "download because ANKICONNECT_FAIL_ON_FULL_SYNC_CONFLICT "
+                    "is enabled. Preserve both collections and resolve "
+                    "the conflict manually."
+                )
+
             needs_reopen = False
             if result.required in (
                 SyncCollectionResponse.FULL_SYNC,

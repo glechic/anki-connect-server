@@ -35,6 +35,10 @@ class Config(BaseSettings):
 
     ANKIWEB_URL: str | None = None
 
+    # Opt-in fail-closed policy: never replace a local collection as a result
+    # of a two-sided FULL_SYNC conflict without explicit human intervention.
+    FAIL_ON_FULL_SYNC_CONFLICT: bool = False
+
     @field_validator("COLLECTION_PATH")
     @classmethod
     def _validate_collection_path(cls, v: str) -> str:

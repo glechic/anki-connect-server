@@ -125,6 +125,39 @@ class TestSyncRequirementResolution:
         # rather than constructing a new Collection (which would "Anki already open").
         mock_col.reopen.assert_called_once_with(after_full_sync=True)
 
+    def test_full_sync_conflict_abort_preserves_local_collection(self, patched_config, monkeypatch):
+        """Strict mode aborts before any destructive full download."""
+        monkeypatch.setattr(patched_config, "FAIL_ON_FULL_SYNC_CONFLICT", True)
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_SYNC, server_media_usn=42)
+        with _make_wrapper(mock_col) as wrapper:
+            with pytest.raises(SyncError, match="refusing automatic download"):
+                wrapper.sync_to_ankiweb()
+            assert wrapper._closed is False
+            assert wrapper.collection_generation == 0
+        mock_col.sync_collection.assert_called_once()
+        mock_col.close_for_full_sync.assert_not_called()
+        mock_col.full_upload_or_download.assert_not_called()
+        mock_col.reopen.assert_not_called()
+
+    def test_full_sync_default_mode_still_downloads(self, patched_config, monkeypatch):
+        """Existing installations retain remote-wins policy by default."""
+        monkeypatch.setattr(patched_config, "FAIL_ON_FULL_SYNC_CONFLICT", False)
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_SYNC)
+        with _make_wrapper(mock_col) as wrapper:
+            result = wrapper.sync_to_ankiweb()
+        assert result.collection.outcome is CollectionSyncOutcome.DOWNLOADED
+        mock_col.full_upload_or_download.assert_called_once()
+
+    def test_full_download_remote_only_allowed_in_strict_mode(self, patched_config, monkeypatch):
+        """Remote-only first sync is distinct from a two-sided conflict."""
+        monkeypatch.setattr(patched_config, "FAIL_ON_FULL_SYNC_CONFLICT", True)
+        mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_DOWNLOAD)
+        with _make_wrapper(mock_col) as wrapper:
+            result = wrapper.sync_to_ankiweb()
+        assert result.collection.outcome is CollectionSyncOutcome.DOWNLOADED
+        assert result.collection.download_reason is DownloadReason.REMOTE_ONLY
+        mock_col.full_upload_or_download.assert_called_once()
+
     def test_full_download_downloads_with_remote_only_reason(self, patched_config):
         """FULL_DOWNLOAD downloads and reports REMOTE_ONLY."""
         mock_col, _, _ = _make_mock_col(SyncCollectionResponse.FULL_DOWNLOAD, server_media_usn=42)
