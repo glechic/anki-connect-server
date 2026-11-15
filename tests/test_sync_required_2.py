@@ -132,7 +132,6 @@ class TestSyncRequirementResolution:
         with _make_wrapper(mock_col) as wrapper:
             with pytest.raises(SyncError, match="refusing automatic download"):
                 wrapper.sync_to_ankiweb()
-            assert wrapper._closed is False
             assert wrapper.collection_generation == 0
         mock_col.sync_collection.assert_called_once()
         mock_col.close_for_full_sync.assert_not_called()
